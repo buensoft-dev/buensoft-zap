@@ -9,9 +9,9 @@ export const MODES = [
 ];
 
 export const SKILLS = [
-  { id: 1, name: 'Principiante', splash: 'MODO PRINCIPIANTE', seconds: 30 },
-  { id: 2, name: 'Intermedio', splash: 'MODO INTERMEDIO', seconds: 20 },
-  { id: 3, name: 'Experto', splash: 'MODO AVANZADO', seconds: 10 },
+  { id: 1, name: 'Principiante', splash: 'MODO PRINCIPIANTE', seconds: 20 },
+  { id: 2, name: 'Intermedio', splash: 'MODO INTERMEDIO', seconds: 10 },
+  { id: 3, name: 'Experto', splash: 'MODO AVANZADO', seconds: 5 },
 ];
 
 const VOWELS = 'AEIOU';

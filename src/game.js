@@ -328,11 +328,13 @@ export class Game {
     const cells = this.grid[this.playerRow].filter((cell) => cell.kind === 'filled');
     const pattern = cells.map((cell) => (cell.wild ? '' : cell.letter));
     if (!pattern.includes('')) return pattern.join('');
-    for (const vowel of VOWELS) {
-      const word = pattern.map((letter) => letter || vowel).join('');
-      if (Object.prototype.hasOwnProperty.call(this.dictionary, word) && !this.used.has(word)) return word;
+    const matches = [];
+    for (const letter of ALPHABET) {
+      const word = pattern.map((item) => item || letter).join('');
+      if (Object.prototype.hasOwnProperty.call(this.dictionary, word) && !this.used.has(word)) matches.push(word);
     }
-    return pattern.map((letter) => letter || 'A').join('');
+    if (!matches.length) return pattern.map((letter) => letter || 'A').join('');
+    return matches[this.pick(matches.length)];
   }
 
   deal() {

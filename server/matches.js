@@ -287,7 +287,7 @@ export function matchRoutes(app) {
   app.post('/api/matches', async (req, res) => {
     try {
       const user = requireUser(req);
-      const seats = Math.min(6, Math.max(2, Number(req.body?.seats) || 2));
+      const seats = Math.min(5, Math.max(2, Number(req.body?.seats) || 2));
       const rounds = Math.min(5, Math.max(1, Number(req.body?.rounds) || 1));
       const modeId = req.body?.modeId === 'en-es' ? 'en-es' : 'es-en';
       const skillId = [1, 2, 3].includes(Number(req.body?.skillId)) ? Number(req.body.skillId) : 2;

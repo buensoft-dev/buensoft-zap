@@ -555,7 +555,7 @@ function friendsPanel() {
   return `
     <p class="menu-label">Nueva partida</p>
     <div class="choices">
-      ${[2, 3, 4, 5, 6].map((count) => `<button class="choice ${state.competeSeats === count ? 'active' : ''}" data-seats="${count}" type="button">${count} jugadores</button>`).join('')}
+      ${[2, 3, 4, 5].map((count) => `<button class="choice ${state.competeSeats === count ? 'active' : ''}" data-seats="${count}" type="button">${count} jugadores</button>`).join('')}
     </div>
     <div class="choices">
       ${[1, 2, 3, 4, 5].map((count) => `<button class="choice ${state.competeRounds === count ? 'active' : ''}" data-rounds="${count}" type="button">${count} ${count === 1 ? 'ronda' : 'rondas'}</button>`).join('')}
@@ -950,8 +950,18 @@ function bind() {
   }
   const copyLink = app.querySelector('#copy-link');
   if (copyLink) {
-    copyLink.onclick = () => {
-      navigator.clipboard?.writeText(`${location.origin}/?partida=${state.match.id}`);
+    copyLink.onclick = async () => {
+      try {
+        await navigator.clipboard.writeText(`${location.origin}/?partida=${state.match.id}`);
+      } catch {
+        return;
+      }
+      copyLink.textContent = 'COPIADO';
+      copyLink.classList.add('copied');
+      setTimeout(() => {
+        copyLink.textContent = 'Copiar';
+        copyLink.classList.remove('copied');
+      }, 1400);
     };
   }
   app.querySelectorAll('[data-theme]').forEach((button) => {

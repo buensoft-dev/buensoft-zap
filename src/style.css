@@ -110,7 +110,24 @@ body {
 html, body, #app { min-height: 100%; }
 body { margin: 0; }
 
-button, input { font-family: inherit; }
+button, a.primary, a.google, input {
+  font-family: inherit;
+  transition: transform .12s ease, filter .12s ease, background .12s ease;
+}
+button:hover:not(:disabled), a.primary:hover, a.google:hover {
+  transform: translateY(-2px);
+  filter: brightness(1.14);
+}
+button:active:not(:disabled), a.primary:active, a.google:active {
+  transform: translateY(1px) scale(.98);
+  filter: brightness(.92);
+}
+
+#copy-link.copied {
+  background: #fff;
+  color: #111;
+  border-color: #fff;
+}
 
 .app {
   max-width: 1180px;
@@ -685,20 +702,20 @@ a.google {
 .history-card { margin: 0 0 10px; border-bottom: 1px solid var(--line); padding-bottom: 8px; }
 .history-card summary { cursor: pointer; font-weight: 700; }
 .invite-alert {
-  margin: 14px 0;
-  padding: 16px;
-  border-radius: 18px;
-  border: 3px solid #ff2a2a;
+  margin: 8px 0;
+  padding: 8px 10px;
+  border-radius: 14px;
+  border: 2px solid #ff2a2a;
   animation: inviteBlink 0.7s steps(2, end) infinite;
 }
-.invite-alert h3 { margin: 0 0 10px; font-size: 26px; }
+.invite-alert h3 { margin: 0 0 6px; font-size: 16px; }
 .invite-alert li { align-items: center; }
-.invite-alert strong { font-size: 18px; }
+.invite-alert strong { font-size: 14px; }
 .invite-alert span { display: flex; gap: 8px; }
 .invite-alert .join, .invite-alert .ignore {
   border: 0;
-  border-radius: 12px;
-  padding: 12px 16px;
+  border-radius: 10px;
+  padding: 8px 12px;
   font-weight: 800;
   cursor: pointer;
 }
@@ -958,6 +975,13 @@ a.google {
   .tile { height: 48px; font-size: 22px; box-shadow: 0 5px 0 var(--tile-edge); }
   .keys { display: none; }
   .primary, .ghost { min-width: 0; width: 100%; padding: 12px; }
+  .invite-link { flex-wrap: wrap; }
+  .invite-link code { font-size: 12px; }
+  .invite-alert h3 { font-size: 15px; }
+  .invite-alert li { flex-wrap: wrap; }
+  .menu-hero h2 { font-size: 22px; }
+  .podium { gap: 6px; }
+  .medal { width: 64px; height: 80px; }
   .overlay { padding: 10px; align-items: stretch; }
   .sheet { width: 100%; padding: 16px; border-radius: 18px; }
   .choices, .skills { gap: 8px; }

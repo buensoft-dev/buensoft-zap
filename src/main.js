@@ -520,22 +520,33 @@ function menuHtml() {
   `).join('');
   return `
     <div class="overlay">
-      <div class="sheet">
-        <img class="game-logo" src="/logo.jpg" alt="Buensoft Zap" />
-        <h2>Arma palabras antes de que se acabe el tiempo</h2>
-        <p class="hint">${mode.hint} Hay 10 filas de 7 letras. El reloj avanza solo por las filas; cada palabra válida te da fichas nuevas y puntos según el modo (nivel × letras × 10). Las palabras no se pueden repetir.</p>
-        <div class="choices">${modes}</div>
-        <div class="skills">${skills}</div>
-        <button class="choice ${state.daily ? 'active' : ''}" id="daily">Desafío del día · ${today()}</button>
-        <div class="themes">
-          ${THEMES.map((theme) => `<button class="swatch ${theme.id === state.theme ? 'active' : ''}" data-theme="${theme.id}">${theme.name}</button>`).join('')}
-        </div>
-        ${accountHtml()}
-        ${state.error ? `<p class="hint">${state.error}</p>` : ''}
-        <h3 class="board-title">${scoreTitle()}</h3>
-        ${scoresHtml()}
-        <div class="sheet-actions">
-          <button class="primary" id="play">JUGAR</button>
+      <div class="sheet menu-sheet">
+        <header class="menu-hero">
+          <img class="game-logo" src="/logo.jpg" alt="Buensoft Zap" />
+          <div>
+            <h2>Arma palabras antes de que se acabe el tiempo</h2>
+            <p class="hint">${mode.hint} Diez filas de siete letras. El reloj avanza por las filas y cada palabra válida reparte fichas nuevas.</p>
+          </div>
+        </header>
+        <div class="menu-grid">
+          <section class="menu-setup">
+            <p class="menu-label">Idioma</p>
+            <div class="choices">${modes}</div>
+            <p class="menu-label">Nivel</p>
+            <div class="skills">${skills}</div>
+            <button class="choice ${state.daily ? 'active' : ''}" id="daily">Desafío del día · ${today()}</button>
+            <p class="menu-label">Color</p>
+            <div class="themes">
+              ${THEMES.map((theme) => `<button class="swatch ${theme.id === state.theme ? 'active' : ''}" data-theme="${theme.id}">${theme.name}</button>`).join('')}
+            </div>
+            ${accountHtml()}
+            ${state.error ? `<p class="hint">${state.error}</p>` : ''}
+            <button class="primary" id="play">JUGAR</button>
+          </section>
+          <section class="menu-scores">
+            <h3 class="board-title">${scoreTitle()}</h3>
+            ${scoresHtml()}
+          </section>
         </div>
       </div>
     </div>
@@ -624,17 +635,19 @@ function render() {
           <div class="stat"><span>Puntos</span><strong>${game ? game.pointsTotal : 0}</strong></div>
         </div>
       </header>
-      ${game && state.screen === 'play' ? `
-        <div class="target-bar ${state.recordShown ? 'beaten' : ''}">
-          <span>${state.recordShown ? 'Nuevo top score' : 'Top a vencer'}</span>
-          <strong>${state.targetPoints || '—'}</strong>
-          <em>${state.targetName ? escapeHtml(state.targetName) : 'Sé el primero'}</em>
-        </div>
-      ` : ''}
       ${state.screen === 'loading' ? '<p class="hint">Cargando diccionario…</p>' : ''}
       ${game && state.screen !== 'menu' ? `
         <div class="layout">
-          <aside class="card meaning">${meaningBlock(game)}</aside>
+          <div class="side-col">
+            <aside class="card meaning">${meaningBlock(game)}</aside>
+            ${state.screen === 'play' ? `
+              <div class="target-bar ${state.recordShown ? 'beaten' : ''}">
+                <span>${state.recordShown ? 'Nuevo top score' : 'Top a vencer'}</span>
+                <strong>${state.targetPoints || '—'}</strong>
+                <em>${state.targetName ? escapeHtml(state.targetName) : 'Sé el primero'}</em>
+              </div>
+            ` : ''}
+          </div>
           <div>${boardHtml(game)}</div>
         </div>
       ` : ''}

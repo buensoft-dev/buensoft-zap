@@ -384,7 +384,7 @@ function boardHtml(game) {
       ${game.bonus ? `<div class="fx">${game.bonus}</div>` : ''}
       ${rows}
     </section>
-    <section class="card tray ${game.over ? 'on-top' : ''}">
+    <section class="card tray">
       <div>
         <div class="tiles">${tiles}</div>
         <p class="keys">Clic o teclado · Retroceso quita la última · Esc borra la fila · Espacio comprueba</p>

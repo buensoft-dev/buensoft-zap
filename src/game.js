@@ -164,8 +164,8 @@ export class Game {
     else this.combo = 1;
     this.comboTimerRow = this.timerRow;
     const zap = length === SLOTS;
-    const stolen = length >= 6 ? 3 : length >= 5 ? 2 : 0;
-    if (stolen) this.secondsLeft = Math.min(this.secsPerSlot, this.secondsLeft + stolen);
+    const stolen = this.secondsLeft;
+    if (stolen > 0) this.secondsLeft += stolen;
     row.forEach((cell, index) => {
       if (cell.kind === 'open') row[index] = { letter: '', source: -1, kind: 'blank' };
       else if (cell.kind === 'filled') row[index] = { ...cell, kind: 'locked' };

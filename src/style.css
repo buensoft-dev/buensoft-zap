@@ -377,12 +377,6 @@ h1 { font-size: 40px; line-height: 0.95; }
 
 .points:empty { background: transparent; padding: 0; }
 
-.tray.on-top {
-  position: sticky;
-  bottom: 12px;
-  z-index: 6;
-}
-
 .tray {
   margin-top: 16px;
   padding: 16px;

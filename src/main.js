@@ -15,10 +15,67 @@ const state = {
   playerName: '',
   savedId: null,
   saveError: '',
+  popSlot: null,
 };
 
 let timerId = 0;
 let flashId = 0;
+let animating = false;
+
+const sounds = {
+  ctx: null,
+  ready() {
+    const Audio = window.AudioContext || window.webkitAudioContext;
+    if (!Audio) return null;
+    if (!this.ctx) this.ctx = new Audio();
+    if (this.ctx.state === 'suspended') this.ctx.resume();
+    return this.ctx;
+  },
+  tone(freq, duration, type = 'square', gain = 0.08) {
+    const ctx = this.ready();
+    if (!ctx) return;
+    const osc = ctx.createOscillator();
+    const amp = ctx.createGain();
+    osc.type = type;
+    osc.frequency.value = freq;
+    amp.gain.setValueAtTime(gain, ctx.currentTime);
+    amp.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + duration);
+    osc.connect(amp).connect(ctx.destination);
+    osc.start();
+    osc.stop(ctx.currentTime + duration);
+  },
+  tap() { this.tone(640, 0.07, 'square', 0.06); },
+  back() { this.tone(240, 0.06, 'sine', 0.05); },
+  tick() { this.tone(920, 0.05, 'square', 0.04); },
+  fail() {
+    this.tone(180, 0.18, 'sawtooth', 0.05);
+    this.tone(110, 0.28, 'square', 0.04);
+  },
+  win() {
+    [523, 659, 784].forEach((freq, index) => {
+      setTimeout(() => this.tone(freq, 0.12, 'square', 0.06), index * 70);
+    });
+  },
+  boom() {
+    const ctx = this.ready();
+    if (!ctx) return;
+    const length = Math.floor(ctx.sampleRate * 0.18);
+    const buffer = ctx.createBuffer(1, length, ctx.sampleRate);
+    const data = buffer.getChannelData(0);
+    for (let i = 0; i < length; i += 1) data[i] = (Math.random() * 2 - 1) * (1 - i / length);
+    const noise = ctx.createBufferSource();
+    noise.buffer = buffer;
+    const amp = ctx.createGain();
+    amp.gain.value = 0.18;
+    noise.connect(amp).connect(ctx.destination);
+    noise.start();
+    this.tone(90, 0.16, 'sine', 0.1);
+  },
+};
+
+function playerName(value) {
+  return String(value || '').replace(/[^\p{L} ]/gu, '').replace(/ {2,}/g, ' ').slice(0, 20);
+}
 
 function modeById(id) {
   return MODES.find((mode) => mode.id === id) || MODES[0];
@@ -57,8 +114,11 @@ function startClocks() {
       refreshScores().then(() => {
         if (state.screen === 'review') render();
       });
+      render();
+      return;
     }
-    render();
+    if (state.game.secondsLeft > 0 && state.game.secondsLeft <= 3) sounds.tick();
+    if (!paintHud()) render();
   }, 1000);
   flashId = setInterval(() => {
     if (!state.game?.flash) {
@@ -83,9 +143,10 @@ async function refreshScores() {
 
 async function saveScore(event) {
   event.preventDefault();
-  const name = state.playerName.trim();
-  if (!name) {
-    state.saveError = 'Escribe tu nombre';
+  const name = playerName(state.playerName).trim();
+  state.playerName = name;
+  if (!name.replace(/ /g, '')) {
+    state.saveError = 'Escribe tu nombre, máximo 20 letras';
     render();
     return;
   }
@@ -149,8 +210,41 @@ function afterLevelSplash() {
   render();
 }
 
+function paintHud() {
+  const game = state.game;
+  const clock = app.querySelector('[data-clock]');
+  if (!clock || !game) return false;
+  clock.textContent = game.secondsLeft;
+  const warning = app.querySelector('.warning');
+  if (warning) warning.textContent = game.warning || '';
+  app.querySelectorAll('.num').forEach((el, index) => {
+    const live = game.flash && index === game.timerRow ? 'live' : '';
+    el.className = `num ${game.numberColors[index]} ${live}`;
+  });
+  return true;
+}
+
 function onSubmit() {
+  if (animating || !state.game.canSubmit()) return;
+  const row = app.querySelector(`.row[data-row="${state.game.playerRow}"]`);
+  if (!row) {
+    finishSubmit();
+    return;
+  }
+  animating = true;
+  row.classList.add('bursting');
+  sounds.boom();
+  setTimeout(() => {
+    animating = false;
+    finishSubmit();
+  }, 380);
+}
+
+function finishSubmit() {
   const result = state.game.submit();
+  state.popSlot = null;
+  if (result.ok) sounds.win();
+  else sounds.fail();
   if (result.levelUp) {
     stopClocks();
     state.screen = 'splash';
@@ -169,14 +263,19 @@ function onSubmit() {
 function onKey(event) {
   if (!state.game || state.screen !== 'play') return;
   const key = event.key;
+  if (animating) return;
   if (key === 'Backspace') {
     event.preventDefault();
     state.game.backspace();
+    sounds.back();
+    state.popSlot = null;
     render();
     return;
   }
   if (key === 'Escape') {
     state.game.clearRow();
+    sounds.back();
+    state.popSlot = null;
     render();
     return;
   }
@@ -190,6 +289,8 @@ function onKey(event) {
     const index = state.game.source.findIndex((tile) => !tile.hidden && tile.letter === letter);
     if (index >= 0) {
       state.game.place(index);
+      state.popSlot = state.game.filledCount() - 1;
+      sounds.tap();
       render();
     }
   }
@@ -215,10 +316,11 @@ function escapeHtml(value) {
 function boardHtml(game) {
   const rows = game.grid.map((row, rowIndex) => {
     const slots = row.map((cell, slotIndex) => {
-      const cls = cell.kind === 'filled' || cell.kind === 'locked' ? cell.kind : cell.kind;
+      const cls = cell.kind;
+      const pop = cell.kind === 'filled' && rowIndex === game.playerRow && slotIndex === state.popSlot ? 'pop' : '';
       const disabled = cell.kind === 'filled' && rowIndex === game.playerRow ? '' : 'disabled';
       const label = cell.letter || '';
-      return `<button class="slot ${cls}" data-slot="${slotIndex}" ${disabled}>${label}</button>`;
+      return `<button class="slot ${cls} ${pop}" data-slot="${slotIndex}" ${disabled}>${label}</button>`;
     }).join('');
     const color = game.numberColors[rowIndex];
     const live = game.flash && rowIndex === game.timerRow ? 'live' : '';
@@ -226,7 +328,7 @@ function boardHtml(game) {
     const rejected = game.tone === 'bad' && rowIndex === game.playerRow ? 'is-bad' : '';
     const points = game.rowPoints[rowIndex] ? `${game.rowPoints[rowIndex]} Points` : '';
     return `
-      <div class="row ${player} ${rejected}">
+      <div class="row ${player} ${rejected}" data-row="${rowIndex}">
         <div class="num ${color} ${live}">${rowIndex + 1}</div>
         <div class="slots">${slots}</div>
         <div class="points">${points}</div>
@@ -250,17 +352,37 @@ function boardHtml(game) {
       </div>
       <div class="actions">
         <button class="primary" id="submit" ${game.canSubmit() ? '' : 'disabled'}>TERMINAR PALABRA</button>
-        <div class="stat"><span>Tiempo</span><strong>${game.secondsLeft}</strong></div>
+        <div class="stat"><span>Tiempo</span><strong data-clock>${game.secondsLeft}</strong></div>
       </div>
     </section>
   `;
 }
 
+function boardSkill(skill) {
+  return skill === 'Experto' ? 'Avanzado' : skill;
+}
+
+function scoreTitle() {
+  const mode = modeById(state.modeId).label;
+  const skill = boardSkill(skillById(state.skillId).name);
+  return `Top Score - ${mode} - ${skill}`;
+}
+
+function visibleScores() {
+  const mode = modeById(state.modeId).label;
+  const skill = boardSkill(skillById(state.skillId).name);
+  return state.scores
+    .filter((row) => row.mode === mode && boardSkill(row.skill) === skill)
+    .sort((a, b) => b.points - a.points || b.level - a.level || String(a.createdAt).localeCompare(String(b.createdAt)))
+    .slice(0, 10);
+}
+
 function scoresHtml() {
-  if (!state.scores.length) {
-    return '<p class="hint">Aún no hay puntajes. El primero en terminar una partida aparece aquí.</p>';
+  const scores = visibleScores();
+  if (!scores.length) {
+    return '<p class="hint">Aún no hay puntajes en esta combinación.</p>';
   }
-  const rows = state.scores.map((row, index) => `
+  const rows = scores.map((row, index) => `
     <li class="${row.id === state.savedId ? 'mine' : ''}">
       <span>${index + 1}</span>
       <span>${escapeHtml(row.name)}</span>
@@ -277,8 +399,9 @@ function saveFormHtml(game) {
   }
   return `
     <form id="save-score" class="save-score">
-      <p>Tu puntuación es <strong>${game.pointsTotal}</strong> puntos. Escribe tu nombre para entrar en el top.</p>
+      <p>Tu puntuación es <strong>${game.pointsTotal}</strong> puntos. El nombre admite máximo 20 letras.</p>
       <input id="player-name" maxlength="20" placeholder="Tu nombre" value="${escapeHtml(state.playerName)}" autocomplete="name" />
+      <span class="name-count">${playerName(state.playerName).trim().length}/20</span>
       <button class="primary" type="submit">GUARDAR SCORE</button>
     </form>
     ${state.saveError ? `<p class="hint bad-note">${escapeHtml(state.saveError)}</p>` : ''}
@@ -302,7 +425,7 @@ function menuHtml() {
         <div class="choices">${modes}</div>
         <div class="skills">${skills}</div>
         ${state.error ? `<p class="hint">${state.error}</p>` : ''}
-        <h3 class="board-title">Top scores</h3>
+        <h3 class="board-title">${scoreTitle()}</h3>
         ${scoresHtml()}
         <div class="sheet-actions">
           <button class="primary" id="play">JUGAR</button>
@@ -334,7 +457,7 @@ function reviewHtml(game) {
         <p class="eyebrow">Fin del juego</p>
         <h2>Tu puntuación</h2>
         ${saveFormHtml(game)}
-        <h3 class="board-title">Top scores</h3>
+        <h3 class="board-title">${scoreTitle()}</h3>
         ${scoresHtml()}
         <h2>Expande tu vocabulario</h2>
         <p class="hint">Durante todo el juego tuviste la opción de utilizar las siguientes palabras:</p>
@@ -404,13 +527,19 @@ function bind() {
 
   app.querySelectorAll('[data-tile]').forEach((button) => {
     button.onclick = () => {
+      if (animating) return;
       state.game.place(Number(button.dataset.tile));
+      state.popSlot = state.game.filledCount() - 1;
+      sounds.tap();
       render();
     };
   });
   app.querySelectorAll('[data-slot]').forEach((button) => {
     button.onclick = () => {
+      if (animating) return;
       state.game.removeFrom(Number(button.dataset.slot));
+      state.popSlot = null;
+      sounds.back();
       render();
     };
   });
@@ -444,11 +573,16 @@ function bind() {
   const nameInput = app.querySelector('#player-name');
   if (nameInput) {
     nameInput.oninput = () => {
-      state.playerName = nameInput.value;
+      const clean = playerName(nameInput.value);
+      nameInput.value = clean;
+      state.playerName = clean;
+      const count = app.querySelector('.name-count');
+      if (count) count.textContent = `${clean.trim().length}/20`;
     };
   }
 }
 
 refreshScores().finally(() => render());
 
+window.addEventListener('pointerdown', () => sounds.ready(), { once: true });
 window.addEventListener('keydown', onKey);

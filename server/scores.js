@@ -5,13 +5,29 @@ import { fileURLToPath } from 'url';
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 const filePath = path.join(root, 'data', 'scores.json');
 const TOP = 10;
+const STORED = 300;
+
+function boardSkill(skill) {
+  return skill === 'Experto' ? 'Avanzado' : skill;
+}
 
 function cleanName(value) {
-  return String(value || '').replace(/[\u0000-\u001F<>]/g, '').trim().slice(0, 20);
+  return String(value || '').replace(/[\u0000-\u001F<>]/g, '').trim().slice(0, 40);
+}
+
+function playerName(value) {
+  const name = String(value || '').replace(/[^\p{L} ]/gu, '').trim().replace(/ {2,}/g, ' ');
+  const letters = name.replace(/ /g, '');
+  if (!letters || letters.length > 20) {
+    const error = new Error('El nombre puede tener máximo 20 letras');
+    error.status = 400;
+    throw error;
+  }
+  return name;
 }
 
 function asEntry(body) {
-  const name = cleanName(body.name);
+  const name = playerName(body.name);
   const points = Number(body.points);
   const marker = Number(body.marker);
   const level = Number(body.level);
@@ -83,7 +99,7 @@ async function createPostgres() {
         FROM scores
         ORDER BY points DESC, level DESC, created_at ASC
         LIMIT $1
-      `, [TOP]);
+      `, [STORED]);
       return result.rows;
     },
     async add(entry) {
@@ -105,7 +121,7 @@ function store() {
       ? createPostgres()
       : Promise.resolve({
         async list() {
-          return rank(readFileStore());
+          return readFileStore();
         },
         async add(entry) {
           const rows = readFileStore();

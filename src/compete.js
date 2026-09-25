@@ -113,10 +113,18 @@ function podiumHtml(match) {
 
 export function historyHtml(rows) {
   if (!rows?.length) return '<p class="hint">Todavía no hay competencias guardadas.</p>';
-  return `<ul class="tops">${rows.map((match) => {
-    const winner = match.players?.[0];
-    return `<li><span>${match.round}</span><span>${winner?.name || 'Partida'}</span><strong>${winner?.total || 0}</strong><em>${match.rounds} rondas</em></li>`;
-  }).join('')}</ul>`;
+  return rows.map((match) => {
+    const players = match.players || [];
+    const winner = players[0];
+    const list = players.map((player) => `<li><span>${player.place || ''}</span><span>${escapeHtml(player.name)}</span><strong>${player.total || 0}</strong></li>`).join('');
+    return `
+      <article class="history-card">
+        <h3>${escapeHtml(winner?.name || 'Partida')} · ${winner?.total || 0} pts</h3>
+        <p class="hint">${match.rounds || 1} rondas</p>
+        <ol class="tops">${list}</ol>
+      </article>
+    `;
+  }).join('');
 }
 
 export async function postBoard(state, finish) {

@@ -2,4 +2,4 @@ node_modules/
 dist/
 data/scores.json
 data/matches.json
-data/users.json
+data/history.json

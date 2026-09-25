@@ -7,7 +7,7 @@ const cache = new Map();
 
 const state = {
   modeId: 'es-en',
-  skillId: 2,
+  skillId: 1,
   game: null,
   screen: 'menu',
   selectedWord: '',
@@ -18,7 +18,7 @@ const state = {
   saveError: '',
   popSlot: null,
   followedRow: null,
-  daily: false,
+  daily: true,
   theme: localStorage.getItem('zap-theme') || 'neon',
   targetPoints: 0,
   targetName: '',
@@ -30,7 +30,7 @@ const state = {
   users: [],
   history: [],
   invites: [],
-  showCompete: false,
+  playMode: 'solo',
   competeSeats: 4,
   competeRounds: 2,
 };
@@ -536,50 +536,47 @@ function saveFormHtml(game) {
   `;
 }
 
-function competePanel() {
+function invitesHtml() {
+  if (!state.invites.length) return '';
   const invites = state.invites.map((match) => `
     <li>
-      <span>${match.hostName || 'Invitación'}</span>
+      <span>${escapeHtml(match.hostName || 'Invitación')}</span>
       <button class="choice" data-answer="yes" data-match="${match.id}" type="button">Aceptar</button>
       <button class="ghost" data-answer="no" data-match="${match.id}" type="button">Negar</button>
     </li>
   `).join('');
+  return `<p class="menu-label">Invitaciones</p><ul class="roster">${invites}</ul>`;
+}
+
+function friendsPanel() {
   return `
-    <section class="compete-panel">
-      <p class="menu-label">Nueva competencia</p>
-      <div class="choices">
-        ${[2, 3, 4, 5, 6].map((count) => `<button class="choice ${state.competeSeats === count ? 'active' : ''}" data-seats="${count}" type="button">${count} jugadores</button>`).join('')}
-      </div>
-      <div class="choices">
-        ${[1, 2, 3, 4, 5].map((count) => `<button class="choice ${state.competeRounds === count ? 'active' : ''}" data-rounds="${count}" type="button">${count} ${count === 1 ? 'ronda' : 'rondas'}</button>`).join('')}
-      </div>
-      <button class="primary" id="create-match" type="button">CREAR PARTIDA</button>
-      <p class="menu-label">Invitaciones</p>
-      ${invites ? `<ul class="roster">${invites}</ul>` : '<p class="hint">No tienes invitaciones pendientes.</p>'}
-      <p class="menu-label">Historial</p>
-      ${historyHtml(state.history)}
-    </section>
+    <p class="menu-label">Nueva partida</p>
+    <div class="choices">
+      ${[2, 3, 4, 5, 6].map((count) => `<button class="choice ${state.competeSeats === count ? 'active' : ''}" data-seats="${count}" type="button">${count} jugadores</button>`).join('')}
+    </div>
+    <div class="choices">
+      ${[1, 2, 3, 4, 5].map((count) => `<button class="choice ${state.competeRounds === count ? 'active' : ''}" data-rounds="${count}" type="button">${count} ${count === 1 ? 'ronda' : 'rondas'}</button>`).join('')}
+    </div>
+    ${invitesHtml()}
+    <button class="primary" id="create-match" type="button">CREAR PARTIDA</button>
   `;
 }
 
-async function openCompete() {
-  if (!state.user) {
-    state.error = 'Entra con Google para competir';
-    render();
-    return;
-  }
-  state.showCompete = !state.showCompete;
-  if (state.showCompete) {
-    const [users, history, invites] = await Promise.all([
-      fetch('/api/users').then((response) => response.json()).catch(() => []),
-      fetch('/api/history').then((response) => response.json()).catch(() => []),
-      fetch('/api/invites').then((response) => response.json()).catch(() => []),
-    ]);
-    state.users = Array.isArray(users) ? users : [];
-    state.history = Array.isArray(history) ? history : [];
-    state.invites = Array.isArray(invites) ? invites : [];
-  }
-  render();
+async function loadCompeteLists() {
+  if (!state.user) return;
+  const [history, invites] = await Promise.all([
+    fetch('/api/history').then((response) => response.json()).catch(() => []),
+    fetch('/api/invites').then((response) => response.json()).catch(() => []),
+  ]);
+  state.history = Array.isArray(history) ? history : [];
+  state.invites = Array.isArray(invites) ? invites : [];
+}
+
+async function showPlayMode(mode) {
+  state.playMode = mode;
+  state.error = mode === 'friends' && !state.user ? 'Entra con Google para jugar con amigos' : '';
+  if (mode === 'friends' && state.user) await loadCompeteLists();
+  if (state.screen === 'menu') render();
 }
 
 function watchMatch() {
@@ -637,7 +634,7 @@ async function enterMatch(id) {
   }
   state.match = data;
   state.screen = 'match';
-  state.showCompete = false;
+  state.playMode = 'friends';
   watchMatch();
   render();
 }
@@ -660,28 +657,32 @@ function menuHtml() {
             <p class="hint">${mode.hint} Diez filas de siete letras. El reloj avanza por las filas y cada palabra válida reparte fichas nuevas.</p>
           </div>
         </header>
+        <p class="menu-label">Color</p>
+        <div class="themes">
+          ${THEMES.map((theme) => `<button class="swatch ${theme.id === state.theme ? 'active' : ''}" data-theme="${theme.id}">${theme.name}</button>`).join('')}
+        </div>
+        <div class="play-tabs">
+          <button class="${state.playMode === 'solo' ? 'active' : ''}" data-play="solo" type="button">Solo</button>
+          <button class="${state.playMode === 'friends' ? 'active' : ''}" data-play="friends" type="button">Con amigos</button>
+        </div>
         <div class="menu-grid">
           <section class="menu-setup">
+            ${state.user ? `<p class="account-line">Entraste como <strong>${escapeHtml(state.user.name)}</strong></p>` : ''}
             <p class="menu-label">Idioma</p>
             <div class="choices">${modes}</div>
             <p class="menu-label">Nivel</p>
             <div class="skills">${skills}</div>
-            <button class="choice ${state.daily ? 'active' : ''}" id="daily">Desafío del día · ${today()}</button>
-            <p class="menu-label">Color</p>
-            <div class="themes">
-              ${THEMES.map((theme) => `<button class="swatch ${theme.id === state.theme ? 'active' : ''}" data-theme="${theme.id}">${theme.name}</button>`).join('')}
-            </div>
-            ${accountHtml()}
+            ${state.playMode === 'solo' ? `<button class="choice ${state.daily ? 'active' : ''}" id="daily">Desafío del día · ${today()}</button>` : ''}
+            ${state.playMode === 'friends' ? friendsPanel() : ''}
             ${state.error ? `<p class="hint">${state.error}</p>` : ''}
             <div class="sheet-actions">
-              <button class="primary" id="play">JUGAR</button>
-              <button class="ghost" id="compete">COMPETENCIA</button>
+              ${state.playMode === 'solo' ? '<button class="primary" id="play">JUGAR</button>' : ''}
+              ${state.user ? '<button class="ghost" id="logout" type="button">SALIR</button>' : '<a class="primary google" href="/api/auth/google">Entrar con Google</a>'}
             </div>
-            ${state.showCompete ? competePanel() : ''}
+            ${state.playMode === 'solo' ? invitesHtml() : ''}
           </section>
           <section class="menu-scores">
-            <h3 class="board-title">${scoreTitle()}</h3>
-            ${scoresHtml()}
+            ${state.playMode === 'friends' ? `<h3 class="board-title">Ganadores</h3>${historyHtml(state.history)}` : `<h3 class="board-title">${scoreTitle()}</h3>${scoresHtml()}`}
           </section>
         </div>
       </div>
@@ -821,8 +822,9 @@ function bind() {
   });
   const play = app.querySelector('#play');
   if (play) play.onclick = beginMatch;
-  const compete = app.querySelector('#compete');
-  if (compete) compete.onclick = openCompete;
+  app.querySelectorAll('[data-play]').forEach((button) => {
+    button.onclick = () => showPlayMode(button.dataset.play);
+  });
   app.querySelectorAll('[data-seats]').forEach((button) => {
     button.onclick = () => {
       state.competeSeats = Number(button.dataset.seats);
@@ -894,7 +896,10 @@ function bind() {
         body: JSON.stringify({ accept: button.dataset.answer === 'yes' }),
       });
       if (button.dataset.answer === 'yes') enterMatch(button.dataset.match);
-      else openCompete();
+      else {
+        state.invites = state.invites.filter((match) => match.id !== button.dataset.match);
+        render();
+      }
     };
   });
   const matchReady = app.querySelector('#match-ready');
@@ -1019,7 +1024,10 @@ Promise.all([
 ]).then(([, auth]) => {
   state.authReady = true;
   state.user = auth.user || null;
-  if (state.user) state.playerName = state.user.name;
+  if (state.user) {
+    state.playerName = state.user.name;
+    loadCompeteLists().then(() => { if (state.screen === 'menu') render(); });
+  }
   if (new URLSearchParams(window.location.search).get('auth') === 'error') {
     state.error = 'Google no dejó entrar. Tu correo tiene que estar en los usuarios de prueba.';
   }

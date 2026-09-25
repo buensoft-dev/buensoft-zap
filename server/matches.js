@@ -7,6 +7,7 @@ import { listUsers } from './users.js';
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 const filePath = path.join(root, 'data', 'matches.json');
+const historyPath = path.join(root, 'data', 'history.json');
 const dictCache = new Map();
 
 function readFileStore() {
@@ -19,9 +20,24 @@ function readFileStore() {
   }
 }
 
+function readHistory() {
+  if (!existsSync(historyPath)) return [];
+  try {
+    const data = JSON.parse(readFileSync(historyPath, 'utf8'));
+    return Array.isArray(data) ? data : [];
+  } catch {
+    return [];
+  }
+}
+
 function writeFileStore(rows) {
   mkdirSync(path.dirname(filePath), { recursive: true });
   writeFileSync(filePath, JSON.stringify(rows, null, 2));
+}
+
+function writeHistory(rows) {
+  mkdirSync(path.dirname(historyPath), { recursive: true });
+  writeFileSync(historyPath, JSON.stringify(rows, null, 2));
 }
 
 async function dictionary(modeId) {
@@ -130,6 +146,13 @@ async function createPostgres() {
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
   `);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS zap_history (
+      id TEXT PRIMARY KEY,
+      played_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      data JSONB NOT NULL
+    )
+  `);
   return {
     async all() {
       const result = await pool.query(`SELECT data FROM zap_matches ORDER BY updated_at DESC LIMIT 80`);
@@ -140,6 +163,16 @@ async function createPostgres() {
         INSERT INTO zap_matches (id, data, updated_at) VALUES ($1, $2::jsonb, NOW())
         ON CONFLICT (id) DO UPDATE SET data = EXCLUDED.data, updated_at = NOW()
       `, [match.id, JSON.stringify(match)]);
+    },
+    async archive(row) {
+      await pool.query(`
+        INSERT INTO zap_history (id, played_at, data) VALUES ($1, $2, $3::jsonb)
+        ON CONFLICT (id) DO NOTHING
+      `, [row.id, row.playedAt, JSON.stringify(row)]);
+    },
+    async history() {
+      const result = await pool.query(`SELECT data FROM zap_history ORDER BY played_at DESC LIMIT 30`);
+      return result.rows.map((row) => row.data);
     },
   };
 }
@@ -159,6 +192,14 @@ function store() {
           rows.unshift(match);
           writeFileStore(rows.slice(0, 80));
         },
+        async archive(row) {
+          const rows = readHistory().filter((item) => item.id !== row.id);
+          rows.unshift(row);
+          writeHistory(rows.slice(0, 30));
+        },
+        async history() {
+          return readHistory();
+        },
       });
   }
   return storePromise;
@@ -171,8 +212,28 @@ async function load(id) {
 
 async function save(match) {
   const matches = await store();
+  if (match.phase === 'podium' && !match.savedHistory) {
+    match.savedHistory = true;
+    await matches.archive(historyRow(match));
+  }
   await matches.save(match);
   return match;
+}
+
+function historyRow(match) {
+  const players = standings(match).map((player, index) => ({
+    name: player.name,
+    total: player.total || 0,
+    place: index + 1,
+  }));
+  return {
+    id: match.id,
+    playedAt: match.createdAt || new Date().toISOString(),
+    modeId: match.modeId,
+    skillId: match.skillId,
+    rounds: match.rounds,
+    players,
+  };
 }
 
 function fail(message, status = 400) {
@@ -212,11 +273,12 @@ export function matchRoutes(app) {
   app.get('/api/history', async (_req, res) => {
     try {
       const matches = await store();
-      const rows = (await matches.all())
-        .filter((match) => match.phase === 'podium')
-        .slice(0, 20)
-        .map((match) => publicMatch(match));
-      res.json(rows);
+      const archived = await matches.history();
+      const seen = new Set(archived.map((row) => row.id));
+      const older = (await matches.all())
+        .filter((match) => match.phase === 'podium' && !seen.has(match.id))
+        .map((match) => historyRow(match));
+      res.json([...archived, ...older].slice(0, 30));
     } catch {
       res.status(500).json({ error: 'No se pudo leer el historial' });
     }

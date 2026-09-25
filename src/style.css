@@ -633,7 +633,27 @@ a.google {
 .menu-setup .choices,
 .menu-setup .skills { margin: 8px 0 0; }
 .menu-setup .themes { margin-top: 8px; }
-.menu-setup .primary { margin-top: 16px; width: 100%; }
+.play-tabs { display: flex; gap: 8px; margin: 14px 0 8px; }
+.play-tabs button {
+  flex: 1;
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--cream);
+  border-radius: 14px;
+  padding: 12px 10px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  cursor: pointer;
+}
+.play-tabs button.active { background: var(--gold); color: var(--on-gold); border-color: transparent; }
+.account-line { margin: 8px 0 0; }
+.history-card { margin: 0 0 14px; }
+.history-card h3 { margin: 0; font-family: Fraunces, serif; font-size: 22px; }
+.menu-setup .sheet-actions { justify-content: stretch; }
+.menu-setup .sheet-actions .primary,
+.menu-setup .sheet-actions .ghost,
+.menu-setup .sheet-actions .google { flex: 1; text-align: center; }
+.menu-setup #create-match { width: 100%; margin-top: 12px; }
 .menu-scores {
   padding: 4px 0 0 18px;
   border-left: 1px solid var(--line);

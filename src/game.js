@@ -59,6 +59,7 @@ export class Game {
     this.grid = Array.from({ length: ROWS }, () => Array.from({ length: SLOTS }, emptyCell));
     this.playerRow = 0;
     this.timerRow = 0;
+    this.rowSeconds = Array.from({ length: ROWS }, () => this.secsPerSlot);
     this.secondsLeft = this.secsPerSlot;
     this.playing = false;
     this.over = false;
@@ -80,8 +81,23 @@ export class Game {
 
   start() {
     this.playing = true;
-    this.secondsLeft = this.secsPerSlot;
+    this.secondsLeft = this.masterTime();
     this.warning = '';
+  }
+
+  masterTime() {
+    if (this.timerRow >= ROWS) return 0;
+    const last = Math.min(Math.max(this.playerRow, this.timerRow), ROWS - 1);
+    let sum = 0;
+    for (let index = this.timerRow; index <= last; index += 1) sum += this.rowSeconds[index] || 0;
+    return sum;
+  }
+
+  rowClock(index) {
+    if (index < this.timerRow || index > this.playerRow || index >= ROWS) return '';
+    const left = this.rowSeconds[index] || 0;
+    if (left <= 0) return '';
+    return `${left}s`;
   }
 
   filledCount(row = this.playerRow) {
@@ -164,8 +180,6 @@ export class Game {
     else this.combo = 1;
     this.comboTimerRow = this.timerRow;
     const zap = length === SLOTS;
-    const stolen = this.secondsLeft;
-    if (stolen > 0) this.secondsLeft += stolen;
     row.forEach((cell, index) => {
       if (cell.kind === 'open') row[index] = { letter: '', source: -1, kind: 'blank' };
       else if (cell.kind === 'filled') row[index] = { ...cell, kind: 'locked' };
@@ -176,7 +190,7 @@ export class Game {
     this.intScore += length + 1;
     const points = this.skill.id * length * 10 * this.combo + (zap ? this.skill.id * 100 : 0);
     this.pointsTotal += points;
-    this.bonus = [this.combo > 1 ? `COMBO x${this.combo}` : '', zap ? 'ZAP' : '', stolen ? `+${stolen}s` : ''].filter(Boolean).join(' · ');
+    this.bonus = [this.combo > 1 ? `COMBO x${this.combo}` : '', zap ? 'ZAP' : ''].filter(Boolean).join(' · ');
     this.rowPoints[this.playerRow] = points;
     this.numberColors[this.playerRow] = 'done';
     if (this.timerRow === this.playerRow) this.flash = false;
@@ -187,30 +201,31 @@ export class Game {
     this.struck = false;
 
     this.playerRow += 1;
+    this.secondsLeft = this.masterTime();
     this.deal();
 
     if (this.playerRow >= ROWS) {
-      return { ok: true, zap, combo: this.combo, stolen, levelUp: this.advanceLevel() };
+      return { ok: true, zap, combo: this.combo, levelUp: this.advanceLevel() };
     }
-    return { ok: true, zap, combo: this.combo, stolen };
+    return { ok: true, zap, combo: this.combo };
   }
 
   tick() {
-    if (!this.playing || this.over) return { ended: false };
-    this.secondsLeft -= 1;
-    this.paintTimer();
-    if (this.secondsLeft > 0) return { ended: false };
-
-    this.flash = false;
-    this.warning = '';
-    this.timerRow += 1;
-    this.secondsLeft = this.secsPerSlot;
-    if (this.timerRow >= ROWS) {
-      this.playing = false;
-      this.over = true;
+    if (!this.playing || this.over || this.timerRow >= ROWS) return { ended: false };
+    this.rowSeconds[this.timerRow] -= 1;
+    if (this.rowSeconds[this.timerRow] <= 0) {
+      this.rowSeconds[this.timerRow] = 0;
+      this.flash = false;
       this.warning = '';
-      return { ended: true };
+      this.timerRow += 1;
+      if (this.timerRow >= ROWS) {
+        this.playing = false;
+        this.over = true;
+        this.secondsLeft = 0;
+        return { ended: true };
+      }
     }
+    this.secondsLeft = this.masterTime();
     this.paintTimer();
     return { ended: false };
   }
@@ -224,6 +239,7 @@ export class Game {
     this.rowPoints = Array.from({ length: ROWS }, () => 0);
     this.playerRow = 0;
     this.timerRow = 0;
+    this.rowSeconds = Array.from({ length: ROWS }, () => this.secsPerSlot);
     this.secondsLeft = this.secsPerSlot;
     this.flash = false;
     this.warning = '';
@@ -243,26 +259,27 @@ export class Game {
 
   resumeAfterLevel() {
     this.playing = true;
-    this.secondsLeft = this.secsPerSlot;
+    this.secondsLeft = this.masterTime();
     this.paintTimer();
   }
 
   paintTimer() {
     if (this.timerRow >= ROWS) return;
+    const left = this.rowSeconds[this.timerRow];
     if (this.numberColors[this.timerRow] === 'done') {
       this.flash = false;
-    } else if (this.secondsLeft <= 2) {
+    } else if (left <= 2) {
       this.numberColors[this.timerRow] = 'danger';
       this.flash = true;
-    } else if (this.secondsLeft <= 5) {
+    } else if (left <= 5) {
       this.numberColors[this.timerRow] = 'hot';
       this.flash = true;
-    } else if (this.secondsLeft <= 9 && this.secsPerSlot > 10) {
+    } else if (left <= 9 && this.secsPerSlot > 10) {
       this.numberColors[this.timerRow] = 'warm';
       this.flash = true;
     }
-    this.warning = this.timerRow === ROWS - 1 && this.secondsLeft <= 10 && this.secondsLeft > 0
-      ? `Faltan ${this.secondsLeft} segundos!`
+    this.warning = this.timerRow === ROWS - 1 && left <= 10 && left > 0
+      ? `Faltan ${left} segundos!`
       : '';
   }
 

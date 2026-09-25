@@ -136,7 +136,8 @@ function startClocks() {
       render();
       return;
     }
-    if (state.game.secondsLeft > 0 && state.game.secondsLeft <= 3) sounds.tick();
+    const rowLeft = state.game.rowSeconds[state.game.timerRow];
+    if (rowLeft > 0 && rowLeft <= 3) sounds.tick();
     if (!paintHud()) render();
   }, 1000);
   flashId = setInterval(() => {
@@ -250,7 +251,7 @@ function paintHud() {
   app.querySelectorAll('.row').forEach((row, index) => {
     row.classList.toggle('is-timer', index === game.timerRow);
     const badge = row.querySelector('[data-row-clock]');
-    if (badge) badge.textContent = index === game.timerRow ? `${game.secondsLeft}s` : '';
+    if (badge) badge.textContent = game.rowClock(index);
   });
   return true;
 }
@@ -361,7 +362,7 @@ function boardHtml(game) {
     const timer = rowIndex === game.timerRow ? 'is-timer' : '';
     const rejected = game.tone === 'bad' && rowIndex === game.playerRow ? 'is-bad' : '';
     const points = game.rowPoints[rowIndex] ? `${game.rowPoints[rowIndex]}` : '';
-    const clock = rowIndex === game.timerRow ? `${game.secondsLeft}s` : '';
+    const clock = game.rowClock(rowIndex);
     return `
       <div class="row ${player} ${timer} ${rejected}" data-row="${rowIndex}">
         <div class="num ${color} ${live}">${rowIndex + 1}</div>

@@ -247,6 +247,11 @@ function paintHud() {
     const live = game.flash && index === game.timerRow ? 'live' : '';
     el.className = `num ${game.numberColors[index]} ${live}`;
   });
+  app.querySelectorAll('.row').forEach((row, index) => {
+    row.classList.toggle('is-timer', index === game.timerRow);
+    const badge = row.querySelector('[data-row-clock]');
+    if (badge) badge.textContent = index === game.timerRow ? `${game.secondsLeft}s` : '';
+  });
   return true;
 }
 
@@ -353,13 +358,18 @@ function boardHtml(game) {
     const color = game.numberColors[rowIndex];
     const live = game.flash && rowIndex === game.timerRow ? 'live' : '';
     const player = rowIndex === game.playerRow ? 'is-player' : '';
+    const timer = rowIndex === game.timerRow ? 'is-timer' : '';
     const rejected = game.tone === 'bad' && rowIndex === game.playerRow ? 'is-bad' : '';
-    const points = game.rowPoints[rowIndex] ? `${game.rowPoints[rowIndex]} Points` : '';
+    const points = game.rowPoints[rowIndex] ? `${game.rowPoints[rowIndex]}` : '';
+    const clock = rowIndex === game.timerRow ? `${game.secondsLeft}s` : '';
     return `
-      <div class="row ${player} ${rejected}" data-row="${rowIndex}">
+      <div class="row ${player} ${timer} ${rejected}" data-row="${rowIndex}">
         <div class="num ${color} ${live}">${rowIndex + 1}</div>
         <div class="slots">${slots}</div>
-        <div class="points">${points}</div>
+        <div class="row-side">
+          <div class="points">${points}</div>
+          <div class="row-clock" data-row-clock>${clock}</div>
+        </div>
       </div>
     `;
   }).join('');
@@ -374,13 +384,13 @@ function boardHtml(game) {
       ${game.bonus ? `<div class="fx">${game.bonus}</div>` : ''}
       ${rows}
     </section>
-    <section class="card tray">
+    <section class="card tray ${game.over ? 'on-top' : ''}">
       <div>
         <div class="tiles">${tiles}</div>
         <p class="keys">Clic o teclado · Retroceso quita la última · Esc borra la fila · Espacio comprueba</p>
       </div>
       <div class="actions">
-        <button class="primary" id="submit" ${game.canSubmit() ? '' : 'disabled'}>TERMINAR PALABRA</button>
+        ${game.over ? '<button class="primary" id="home-board">Página principal</button>' : `<button class="primary" id="submit" ${game.canSubmit() ? '' : 'disabled'}>TERMINAR PALABRA</button>`}
         <div class="stat"><span>Tiempo</span><strong data-clock>${game.secondsLeft}</strong></div>
       </div>
     </section>
@@ -522,7 +532,7 @@ function reviewHtml(game) {
         </div>
         <div class="sheet-actions">
           <button class="ghost" id="again">Jugar de nuevo</button>
-          <button class="primary" id="close-review">OK</button>
+          <button class="primary" id="home">Página principal</button>
         </div>
       </div>
     </div>
@@ -630,22 +640,18 @@ function bind() {
       render();
     };
   });
+  const goHome = () => {
+    stopClocks();
+    state.game = null;
+    state.screen = 'menu';
+    state.savedId = null;
+    render();
+  };
   const again = app.querySelector('#again');
-  if (again) {
-    again.onclick = () => {
-      stopClocks();
-      state.game = null;
-      state.screen = 'menu';
-      render();
-    };
-  }
-  const closeReview = app.querySelector('#close-review');
-  if (closeReview) {
-    closeReview.onclick = () => {
-      state.screen = 'play';
-      render();
-    };
-  }
+  if (again) again.onclick = goHome;
+  app.querySelectorAll('#home, #home-board').forEach((button) => {
+    button.onclick = goHome;
+  });
   const saveForm = app.querySelector('#save-score');
   if (saveForm) saveForm.onsubmit = saveScore;
   const nameInput = app.querySelector('#player-name');

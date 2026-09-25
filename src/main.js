@@ -51,6 +51,7 @@ let flashId = 0;
 let animating = false;
 let recordTimer = 0;
 let matchPoll = 0;
+let invitePoll = 0;
 
 const sounds = {
   ctx: null,
@@ -540,12 +541,14 @@ function invitesHtml() {
   if (!state.invites.length) return '';
   const invites = state.invites.map((match) => `
     <li>
-      <span>${escapeHtml(match.hostName || 'Invitación')}</span>
-      <button class="choice" data-answer="yes" data-match="${match.id}" type="button">Aceptar</button>
-      <button class="ghost" data-answer="no" data-match="${match.id}" type="button">Negar</button>
+      <strong>${escapeHtml(match.hostName || 'Un jugador')} te invitó a jugar</strong>
+      <span>
+        <button class="join" data-answer="yes" data-match="${match.id}" type="button">UNIRSE</button>
+        <button class="ignore" data-answer="no" data-match="${match.id}" type="button">IGNORAR</button>
+      </span>
     </li>
   `).join('');
-  return `<div class="invite-alert"><p class="menu-label">Te invitaron a una partida</p><ul class="roster">${invites}</ul></div>`;
+  return `<div class="invite-alert"><h3>Invitación a una partida</h3><ul class="roster">${invites}</ul></div>`;
 }
 
 function friendsPanel() {
@@ -557,7 +560,6 @@ function friendsPanel() {
     <div class="choices">
       ${[1, 2, 3, 4, 5].map((count) => `<button class="choice ${state.competeRounds === count ? 'active' : ''}" data-rounds="${count}" type="button">${count} ${count === 1 ? 'ronda' : 'rondas'}</button>`).join('')}
     </div>
-    ${invitesHtml()}
     <button class="primary" id="create-match" type="button">CREAR PARTIDA</button>
   `;
 }
@@ -570,6 +572,18 @@ async function loadCompeteLists() {
   ]);
   state.history = Array.isArray(history) ? history : [];
   state.invites = Array.isArray(invites) ? invites : [];
+}
+
+function watchInvites() {
+  clearInterval(invitePoll);
+  if (!state.user) return;
+  invitePoll = setInterval(async () => {
+    if (state.screen !== 'menu') return;
+    const before = state.invites.map((match) => match.id).join();
+    await loadCompeteLists();
+    const after = state.invites.map((match) => match.id).join();
+    if (before !== after && state.screen === 'menu') render();
+  }, 4000);
 }
 
 async function showPlayMode(mode) {
@@ -657,6 +671,7 @@ function menuHtml() {
             <p class="hint">${mode.hint} Diez filas de siete letras. El reloj avanza por las filas y cada palabra válida reparte fichas nuevas.</p>
           </div>
         </header>
+        ${invitesHtml()}
         <p class="menu-label">Color</p>
         <div class="themes">
           ${THEMES.map((theme) => `<button class="swatch ${theme.id === state.theme ? 'active' : ''}" data-theme="${theme.id}">${theme.name}</button>`).join('')}
@@ -679,7 +694,6 @@ function menuHtml() {
               ${state.playMode === 'solo' ? '<button class="primary" id="play">JUGAR</button>' : ''}
               ${state.user ? '<button class="ghost" id="logout" type="button">SALIR</button>' : '<a class="primary google" href="/api/auth/google">Entrar con Google</a>'}
             </div>
-            ${state.playMode === 'solo' ? invitesHtml() : ''}
           </section>
           <section class="menu-scores">
             ${state.playMode === 'friends' ? `<h3 class="board-title">Ganadores</h3>${historyHtml(state.history)}` : `<h3 class="board-title">${scoreTitle()}</h3>${scoresHtml()}`}
@@ -1026,7 +1040,10 @@ Promise.all([
   state.user = auth.user || null;
   if (state.user) {
     state.playerName = state.user.name;
-    loadCompeteLists().then(() => { if (state.screen === 'menu') render(); });
+    loadCompeteLists().then(() => {
+      watchInvites();
+      if (state.screen === 'menu') render();
+    });
   }
   if (new URLSearchParams(window.location.search).get('auth') === 'error') {
     state.error = 'Google no dejó entrar. Tu correo tiene que estar en los usuarios de prueba.';

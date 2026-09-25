@@ -34,14 +34,21 @@ function lobbyHtml(state, match) {
           ${match.players.filter((player) => !player.left).map((player) => `
             <li>
               <span>${escapeHtml(player.name)}${player.userId === match.hostId ? ' · anfitrión' : ''}</span>
-              <em>${player.ready ? 'Listo' : 'En sala'}</em>
+              <em>${player.userId === match.hostId ? 'Anfitrión' : player.ready ? 'Listo' : 'Quiere jugar'}</em>
               ${state.user?.id === match.hostId && player.userId !== match.hostId ? `<button class="ghost" data-remove="${player.userId}" type="button">Quitar</button>` : ''}
             </li>
           `).join('')}
           ${pending.map((invite) => `
             <li>
               <span>${escapeHtml(invite.name)}</span>
-              <em>Invitado</em>
+              <em>Esperando respuesta</em>
+              ${state.user?.id === match.hostId ? `<button class="ghost" data-remove="${invite.userId}" type="button">Quitar</button>` : ''}
+            </li>
+          `).join('')}
+          ${match.invites.filter((invite) => invite.status === 'declined').map((invite) => `
+            <li class="invite-no">
+              <span>${escapeHtml(invite.name)}</span>
+              <em>No quiere jugar</em>
               ${state.user?.id === match.hostId ? `<button class="ghost" data-remove="${invite.userId}" type="button">Quitar</button>` : ''}
             </li>
           `).join('')}

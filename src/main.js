@@ -545,7 +545,7 @@ function invitesHtml() {
       <button class="ghost" data-answer="no" data-match="${match.id}" type="button">Negar</button>
     </li>
   `).join('');
-  return `<p class="menu-label">Invitaciones</p><ul class="roster">${invites}</ul>`;
+  return `<div class="invite-alert"><p class="menu-label">Te invitaron a una partida</p><ul class="roster">${invites}</ul></div>`;
 }
 
 function friendsPanel() {
@@ -663,7 +663,7 @@ function menuHtml() {
         </div>
         <div class="play-tabs">
           <button class="${state.playMode === 'solo' ? 'active' : ''}" data-play="solo" type="button">Solo</button>
-          <button class="${state.playMode === 'friends' ? 'active' : ''}" data-play="friends" type="button">Con amigos</button>
+          <button class="${state.playMode === 'friends' ? 'active' : ''} ${state.invites.length ? 'invite-tab' : ''}" data-play="friends" type="button">Con amigos</button>
         </div>
         <div class="menu-grid">
           <section class="menu-setup">

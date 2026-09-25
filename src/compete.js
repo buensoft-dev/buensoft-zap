@@ -82,13 +82,19 @@ function reviewHtml(match) {
           ${ranked.map((player, index) => `<li><span>${index + 1}</span><span>${escapeHtml(player.name)}</span><strong>${(player.total || 0) + (player.roundScore || 0)}</strong><em>esta ronda ${player.roundScore || 0}</em></li>`).join('')}
         </ol>
         <div class="sheet-actions">
-          <button class="primary" id="match-ready" type="button">SIGUIENTE RONDA</button>
+          <button class="primary" id="match-ready" type="button">${match.round >= match.rounds ? 'VER PODIO' : 'SIGUIENTE RONDA'}</button>
           <button class="ghost" id="match-leave" type="button">Salir</button>
         </div>
-        <p class="hint">Las palabras repetidas entre jugadores se tachan y no suman. Todos los que siguen en la partida deben pulsar Siguiente ronda.</p>
+        <p class="hint">${match.round >= match.rounds ? 'La partida terminó. Todos deben pulsar Ver podio.' : 'Las palabras repetidas entre jugadores se tachan y no suman. Todos los que siguen deben pulsar Siguiente ronda.'}</p>
       </div>
     </div>
   `;
+}
+
+function medal(place) {
+  const colors = { 1: ['#ffe14a', '#c9892a'], 2: ['#f4f7fb', '#8ea0b5'], 3: ['#e7a06a', '#8a4b24'] };
+  const [face, ribbon] = colors[place] || colors[3];
+  return `<svg class="medal" viewBox="0 0 80 100" aria-hidden="true"><path d="M24 4h10l6 18 6-18h10l-14 36h-4z" fill="${ribbon}"/><circle cx="40" cy="58" r="24" fill="${face}" stroke="#3a2508" stroke-width="3"/><text x="40" y="66" text-anchor="middle" font-size="22" font-family="Georgia, serif" fill="#3a2508">${place}</text></svg>`;
 }
 
 function podiumHtml(match) {
@@ -102,7 +108,8 @@ function podiumHtml(match) {
         <div class="podium">
           ${order.map((player) => {
             const place = top.indexOf(player) + 1;
-            return `<div class="podium-place place-${place}"><strong>${place}º</strong><span>${escapeHtml(player.name)}</span><em>${player.total}</em></div>`;
+            const label = place === 1 ? '1er lugar' : place === 2 ? '2do lugar' : '3er lugar';
+            return `<div class="podium-place place-${place}">${medal(place)}<strong>${label}</strong><span>${escapeHtml(player.name)}</span><em>${player.total}</em></div>`;
           }).join('')}
         </div>
         <button class="primary" id="match-home" type="button">Página principal</button>
@@ -111,18 +118,26 @@ function podiumHtml(match) {
   `;
 }
 
+function historyTitle(match) {
+  const rounds = Number(match.rounds) || 1;
+  const players = match.players?.length || 0;
+  const mode = match.modeId === 'en-es' ? 'Inglés-Español' : 'Español-Inglés';
+  const skill = SKILLS.find((item) => item.id === Number(match.skillId))?.name || 'Principiante';
+  const date = new Date(match.playedAt || Date.now());
+  const stamp = `${date.getDate()}/${date.getMonth() + 1}/${date.getFullYear()}`;
+  return `${rounds} ${rounds === 1 ? 'Ronda' : 'Rondas'} - ${players} jugadores - ${mode} - ${skill} - ${stamp}`;
+}
+
 export function historyHtml(rows) {
   if (!rows?.length) return '<p class="hint">Todavía no hay competencias guardadas.</p>';
-  return rows.map((match) => {
-    const players = match.players || [];
-    const winner = players[0];
-    const list = players.map((player) => `<li><span>${player.place || ''}</span><span>${escapeHtml(player.name)}</span><strong>${player.total || 0}</strong></li>`).join('');
+  return rows.map((match, index) => {
+    const top = (match.players || []).slice(0, 3);
+    const places = top.map((player, place) => `<li><span>${place + 1}</span><span>${escapeHtml(player.name)}</span><strong>${player.total || 0}</strong></li>`).join('');
     return `
-      <article class="history-card">
-        <h3>${escapeHtml(winner?.name || 'Partida')} · ${winner?.total || 0} pts</h3>
-        <p class="hint">${match.rounds || 1} rondas</p>
-        <ol class="tops">${list}</ol>
-      </article>
+      <details class="history-card" ${index === 0 ? 'open' : ''}>
+        <summary>${escapeHtml(historyTitle(match))}</summary>
+        <ol class="tops">${places}</ol>
+      </details>
     `;
   }).join('');
 }

@@ -672,18 +672,29 @@ a.google {
 .mini li.struck { text-decoration: line-through; color: var(--bad); }
 .podium { display: flex; align-items: flex-end; justify-content: center; gap: 12px; min-height: 220px; margin: 18px 0; }
 .podium-place {
-  width: 120px;
+  width: 140px;
   text-align: center;
-  border-radius: 16px 16px 0 0;
-  background: linear-gradient(180deg, var(--gold-2), var(--gold));
-  color: var(--on-gold);
-  animation: rise 900ms ease both;
+  color: var(--cream);
+  background: transparent;
 }
+.medal { width: 84px; height: 104px; display: block; margin: 0 auto 8px; }
 .podium-place strong, .podium-place span, .podium-place em { display: block; }
-.place-1 { height: 180px; animation-delay: .15s; }
-.place-2 { height: 140px; }
-.place-3 { height: 110px; animation-delay: .3s; }
-@keyframes rise { from { transform: translateY(40px); opacity: 0; } to { transform: none; opacity: 1; } }
+.podium-place em { font-family: Fraunces, serif; font-size: 28px; color: var(--gold-2); }
+.place-2 .medal { width: 72px; height: 90px; }
+.place-3 .medal { width: 64px; height: 80px; }
+.history-card { margin: 0 0 10px; border-bottom: 1px solid var(--line); padding-bottom: 8px; }
+.history-card summary { cursor: pointer; font-weight: 700; }
+.invite-alert {
+  margin-top: 12px;
+  padding: 10px;
+  border-radius: 16px;
+  animation: inviteBlink 1s steps(2, end) infinite;
+}
+.play-tabs .invite-tab { animation: inviteBlink 1s steps(2, end) infinite; }
+@keyframes inviteBlink {
+  0%, 100% { background: #ff4d4d; color: #2a0606; box-shadow: 0 0 0 2px #ff4d4d; }
+  50% { background: transparent; color: #ffb4b4; box-shadow: none; }
+}
 
 .choices, .skills {
   display: flex;

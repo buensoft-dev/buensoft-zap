@@ -16,7 +16,21 @@ const state = {
   savedId: null,
   saveError: '',
   popSlot: null,
+  followedRow: null,
+  daily: false,
+  theme: localStorage.getItem('zap-theme') || 'neon',
 };
+
+const THEMES = [
+  { id: 'neon', name: 'Neón' },
+  { id: 'ocean', name: 'Océano' },
+  { id: 'sunset', name: 'Atardecer' },
+  { id: 'dark', name: 'Oscuro' },
+];
+
+function applyTheme() {
+  document.documentElement.dataset.theme = state.theme;
+}
 
 let timerId = 0;
 let flashId = 0;
@@ -54,6 +68,11 @@ const sounds = {
   win() {
     [523, 659, 784].forEach((freq, index) => {
       setTimeout(() => this.tone(freq, 0.12, 'square', 0.06), index * 70);
+    });
+  },
+  zap() {
+    [784, 988, 1318, 1568].forEach((freq, index) => {
+      setTimeout(() => this.tone(freq, 0.14, 'square', 0.07), index * 60);
     });
   },
   boom() {
@@ -160,6 +179,8 @@ async function saveScore(event) {
       level: state.game.level,
       skill: state.game.skill.name,
       mode: modeById(state.modeId).label,
+      daily: state.daily,
+      day: state.daily ? today() : '',
     }),
   });
   const data = await response.json();
@@ -183,7 +204,11 @@ function beginMatch() {
   render();
   loadDictionary(mode)
     .then((dictionary) => {
-      state.game = new Game(dictionary, skill.id);
+      state.game = new Game(dictionary, skill.id, {
+        daily: state.daily,
+        day: today(),
+        modeId: state.modeId,
+      });
       state.screen = 'splash';
       state.splashTitle = `NIVEL ${state.game.level}`;
       state.splashMode = skill.splash;
@@ -204,6 +229,7 @@ function beginMatch() {
 }
 
 function afterLevelSplash() {
+  state.followedRow = null;
   state.game.resumeAfterLevel();
   state.screen = 'play';
   startClocks();
@@ -243,7 +269,8 @@ function onSubmit() {
 function finishSubmit() {
   const result = state.game.submit();
   state.popSlot = null;
-  if (result.ok) sounds.win();
+  if (result.ok && result.zap) sounds.zap();
+  else if (result.ok) sounds.win();
   else sounds.fail();
   if (result.levelUp) {
     stopClocks();
@@ -318,9 +345,10 @@ function boardHtml(game) {
     const slots = row.map((cell, slotIndex) => {
       const cls = cell.kind;
       const pop = cell.kind === 'filled' && rowIndex === game.playerRow && slotIndex === state.popSlot ? 'pop' : '';
+      const wild = cell.wild ? 'wild' : '';
       const disabled = cell.kind === 'filled' && rowIndex === game.playerRow ? '' : 'disabled';
       const label = cell.letter || '';
-      return `<button class="slot ${cls} ${pop}" data-slot="${slotIndex}" ${disabled}>${label}</button>`;
+      return `<button class="slot ${cls} ${pop} ${wild}" data-slot="${slotIndex}" ${disabled}>${label}</button>`;
     }).join('');
     const color = game.numberColors[rowIndex];
     const live = game.flash && rowIndex === game.timerRow ? 'live' : '';
@@ -337,12 +365,13 @@ function boardHtml(game) {
   }).join('');
 
   const tiles = game.source.map((tile, index) => `
-    <button class="tile ${tile.hidden ? 'used' : ''}" data-tile="${index}" ${tile.hidden ? 'disabled' : ''}>${tile.letter}</button>
+    <button class="tile ${tile.hidden ? 'used' : ''} ${tile.wild ? 'wild' : ''}" data-tile="${index}" ${tile.hidden ? 'disabled' : ''}>${tile.letter}</button>
   `).join('');
 
   return `
-    <section class="card board">
+    <section class="card board ${game.combo >= 2 ? 'combo-hot' : ''}">
       <div class="warning">${game.warning || ''}</div>
+      ${game.bonus ? `<div class="fx">${game.bonus}</div>` : ''}
       ${rows}
     </section>
     <section class="card tray">
@@ -362,17 +391,25 @@ function boardSkill(skill) {
   return skill === 'Experto' ? 'Avanzado' : skill;
 }
 
+function today() {
+  const date = new Date();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${date.getFullYear()}-${month}-${day}`;
+}
+
 function scoreTitle() {
   const mode = modeById(state.modeId).label;
   const skill = boardSkill(skillById(state.skillId).name);
-  return `Top Score - ${mode} - ${skill}`;
+  const prefix = state.daily ? 'Desafío del día · ' : '';
+  return `${prefix}Top Score - ${mode} - ${skill}`;
 }
 
 function visibleScores() {
   const mode = modeById(state.modeId).label;
   const skill = boardSkill(skillById(state.skillId).name);
   return state.scores
-    .filter((row) => row.mode === mode && boardSkill(row.skill) === skill)
+    .filter((row) => row.mode === mode && boardSkill(row.skill) === skill && Boolean(row.daily) === state.daily && (!state.daily || row.day === today()))
     .sort((a, b) => b.points - a.points || b.level - a.level || String(a.createdAt).localeCompare(String(b.createdAt)))
     .slice(0, 10);
 }
@@ -424,6 +461,10 @@ function menuHtml() {
         <p class="hint">${mode.hint} Hay 10 filas de 7 letras. El reloj avanza solo por las filas; cada palabra válida te da fichas nuevas y puntos según el modo (nivel × letras × 10). Las palabras no se pueden repetir.</p>
         <div class="choices">${modes}</div>
         <div class="skills">${skills}</div>
+        <button class="choice ${state.daily ? 'active' : ''}" id="daily">Desafío del día · ${today()}</button>
+        <div class="themes">
+          ${THEMES.map((theme) => `<button class="swatch ${theme.id === state.theme ? 'active' : ''}" data-theme="${theme.id}">${theme.name}</button>`).join('')}
+        </div>
         ${state.error ? `<p class="hint">${state.error}</p>` : ''}
         <h3 class="board-title">${scoreTitle()}</h3>
         ${scoresHtml()}
@@ -446,6 +487,18 @@ function splashHtml() {
   `;
 }
 
+function personalHtml(game) {
+  const previous = visibleScores().filter((row) => row.id !== state.savedId);
+  const best = previous.reduce((max, row) => Math.max(max, Number(row.points) || 0), 0);
+  if (!best) {
+    return `<p class="challenge">Primera marca en esta combinación: <strong>${game.pointsTotal}</strong>. La próxima, supérala.</p>`;
+  }
+  if (game.pointsTotal > best) {
+    return `<p class="challenge">¡Superaste tu récord! Antes tenías ${best} y ahora <strong>${game.pointsTotal}</strong>.</p>`;
+  }
+  return `<p class="challenge">Tu récord es ${best}. Esta partida: ${game.pointsTotal}. Te faltan ${best - game.pointsTotal} puntos para superarte.</p>`;
+}
+
 function reviewHtml(game) {
   const buttons = game.suggested.map((word) => `
     <button class="${word === state.selectedWord ? 'active' : ''}" data-review="${escapeHtml(word)}">${escapeHtml(word)}</button>
@@ -457,6 +510,7 @@ function reviewHtml(game) {
         <p class="eyebrow">Fin del juego</p>
         <h2>Tu puntuación</h2>
         ${saveFormHtml(game)}
+        ${personalHtml(game)}
         <h3 class="board-title">${scoreTitle()}</h3>
         ${scoresHtml()}
         <h2>Expande tu vocabulario</h2>
@@ -473,6 +527,14 @@ function reviewHtml(game) {
       </div>
     </div>
   `;
+}
+
+function followRow() {
+  if (state.screen !== 'play' || !state.game) return;
+  if (state.followedRow === state.game.playerRow) return;
+  state.followedRow = state.game.playerRow;
+  const row = app.querySelector('.row.is-player');
+  row?.scrollIntoView({ behavior: 'smooth', block: 'start', inline: 'nearest' });
 }
 
 function render() {
@@ -506,6 +568,7 @@ function render() {
     ${state.screen === 'review' && game ? reviewHtml(game) : ''}
   `;
   bind();
+  followRow();
 }
 
 function bind() {
@@ -524,6 +587,21 @@ function bind() {
   });
   const play = app.querySelector('#play');
   if (play) play.onclick = beginMatch;
+  app.querySelectorAll('[data-theme]').forEach((button) => {
+    button.onclick = () => {
+      state.theme = button.dataset.theme;
+      localStorage.setItem('zap-theme', state.theme);
+      applyTheme();
+      render();
+    };
+  });
+  const daily = app.querySelector('#daily');
+  if (daily) {
+    daily.onclick = () => {
+      state.daily = !state.daily;
+      render();
+    };
+  }
 
   app.querySelectorAll('[data-tile]').forEach((button) => {
     button.onclick = () => {
@@ -582,6 +660,7 @@ function bind() {
   }
 }
 
+applyTheme();
 refreshScores().finally(() => render());
 
 window.addEventListener('pointerdown', () => sounds.ready(), { once: true });

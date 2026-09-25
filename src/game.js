@@ -17,8 +17,20 @@ export const SKILLS = [
 const VOWELS = 'AEIOU';
 const ALPHABET = 'ABCDEFGHIJKLMNÑOPQRSTUVWXYZ';
 
-function rand(n) {
-  return Math.floor(Math.random() * n);
+function hashString(text) {
+  let hash = 2166136261;
+  for (const char of text) hash = Math.imul(hash ^ char.charCodeAt(0), 16777619);
+  return hash >>> 0;
+}
+
+function mulberry32(seed) {
+  let value = seed >>> 0;
+  return () => {
+    value = (value + 0x6D2B79F5) >>> 0;
+    let next = Math.imul(value ^ (value >>> 15), 1 | value);
+    next = (next + Math.imul(next ^ (next >>> 7), 61 | next)) ^ next;
+    return ((next ^ (next >>> 14)) >>> 0) / 4294967296;
+  };
 }
 
 function emptyCell() {
@@ -26,10 +38,16 @@ function emptyCell() {
 }
 
 export class Game {
-  constructor(dictionary, skillId) {
+  constructor(dictionary, skillId, options = {}) {
     this.dictionary = dictionary;
     this.words = Object.keys(dictionary);
     this.skill = SKILLS.find((item) => item.id === skillId) || SKILLS[1];
+    this.daily = Boolean(options.daily);
+    this.day = options.day || '';
+    this.rng = this.daily ? mulberry32(hashString(`${this.day}|${options.modeId || ''}`)) : null;
+    this.combo = 0;
+    this.comboTimerRow = -1;
+    this.bonus = '';
     this.level = 1;
     this.secsPerSlot = this.skill.seconds;
     this.intScore = 0;
@@ -84,7 +102,7 @@ export class Game {
     if (slot === -1) return;
     this.clearFeedback();
     tile.hidden = true;
-    row[slot] = { letter: tile.letter, source: sourceIndex, kind: 'filled' };
+    row[slot] = { letter: tile.letter, source: sourceIndex, kind: 'filled', wild: Boolean(tile.wild) };
   }
 
   removeFrom(slotIndex) {
@@ -125,7 +143,7 @@ export class Game {
 
   submit() {
     if (!this.canSubmit()) return { ok: false };
-    const word = this.currentWord();
+    const word = this.resolveWord();
     if (this.used.has(word)) {
       this.showReject(word, `La palabra "${word}", ya fué utilizada, no se pueden repetir las mismas palabras`);
       return { ok: false };
@@ -136,7 +154,18 @@ export class Game {
     }
 
     const row = this.grid[this.playerRow];
+    const filled = row.map((cell, index) => (cell.kind === 'filled' ? index : -1)).filter((index) => index >= 0);
+    word.split('').forEach((letter, index) => {
+      row[filled[index]].letter = letter;
+      row[filled[index]].wild = false;
+    });
     const length = this.filledCount();
+    if (this.comboTimerRow === this.timerRow) this.combo += 1;
+    else this.combo = 1;
+    this.comboTimerRow = this.timerRow;
+    const zap = length === SLOTS;
+    const stolen = length >= 6 ? 3 : length >= 5 ? 2 : 0;
+    if (stolen) this.secondsLeft = Math.min(this.secsPerSlot, this.secondsLeft + stolen);
     row.forEach((cell, index) => {
       if (cell.kind === 'open') row[index] = { letter: '', source: -1, kind: 'blank' };
       else if (cell.kind === 'filled') row[index] = { ...cell, kind: 'locked' };
@@ -145,8 +174,9 @@ export class Game {
     this.used.add(word);
     this.wordsCompleted += 1;
     this.intScore += length + 1;
-    const points = this.skill.id * length * 10;
+    const points = this.skill.id * length * 10 * this.combo + (zap ? this.skill.id * 100 : 0);
     this.pointsTotal += points;
+    this.bonus = [this.combo > 1 ? `COMBO x${this.combo}` : '', zap ? 'ZAP' : '', stolen ? `+${stolen}s` : ''].filter(Boolean).join(' · ');
     this.rowPoints[this.playerRow] = points;
     this.numberColors[this.playerRow] = 'done';
     if (this.timerRow === this.playerRow) this.flash = false;
@@ -160,9 +190,9 @@ export class Game {
     this.deal();
 
     if (this.playerRow >= ROWS) {
-      return { ok: true, levelUp: this.advanceLevel() };
+      return { ok: true, zap, combo: this.combo, stolen, levelUp: this.advanceLevel() };
     }
-    return { ok: true };
+    return { ok: true, zap, combo: this.combo, stolen };
   }
 
   tick() {
@@ -201,6 +231,9 @@ export class Game {
     this.meaning = '';
     this.tone = '';
     this.struck = false;
+    this.combo = 0;
+    this.comboTimerRow = -1;
+    this.bonus = '';
     return {
       level: this.level,
       splash: `NIVEL ${this.level}`,
@@ -248,16 +281,29 @@ export class Game {
     this.struck = false;
   }
 
+  pick(total) {
+    const value = this.rng ? this.rng() : Math.random();
+    return Math.floor(value * total);
+  }
+
+  resolveWord() {
+    const cells = this.grid[this.playerRow].filter((cell) => cell.kind === 'filled');
+    const pattern = cells.map((cell) => (cell.wild ? '' : cell.letter));
+    if (!pattern.includes('')) return pattern.join('');
+    for (const vowel of VOWELS) {
+      const word = pattern.map((letter) => letter || vowel).join('');
+      if (Object.prototype.hasOwnProperty.call(this.dictionary, word) && !this.used.has(word)) return word;
+    }
+    return pattern.map((letter) => letter || 'A').join('');
+  }
+
   deal() {
-    this.source.forEach((tile) => {
-      tile.letter = '';
-      tile.hidden = false;
-    });
+    this.source = Array.from({ length: TILES }, () => ({ letter: '', hidden: false, wild: false, fromSeed: false }));
 
     let seed = '';
     const unused = this.words.filter((word) => !this.used.has(word));
     const pool = unused.length ? unused : this.words;
-    if (pool.length) seed = pool[rand(pool.length)];
+    if (pool.length) seed = pool[this.pick(pool.length)];
     if (seed) this.suggested.push(seed);
 
     const open = () => {
@@ -272,8 +318,9 @@ export class Game {
     for (const letter of seed) {
       const free = open();
       if (!free.length) break;
-      const index = free[rand(free.length)];
+      const index = free[this.pick(free.length)];
       this.source[index].letter = letter;
+      this.source[index].fromSeed = true;
       if (VOWELS.includes(letter)) vowels += 1;
     }
 
@@ -281,12 +328,19 @@ export class Game {
     for (let i = 0; i < missingVowels; i += 1) {
       const free = open();
       if (!free.length) break;
-      const index = free[rand(free.length)];
-      this.source[index].letter = VOWELS[rand(VOWELS.length)];
+      const index = free[this.pick(free.length)];
+      this.source[index].letter = VOWELS[this.pick(VOWELS.length)];
     }
 
     this.source.forEach((tile) => {
-      if (!tile.letter) tile.letter = ALPHABET[rand(ALPHABET.length)];
+      if (!tile.letter) tile.letter = ALPHABET[this.pick(ALPHABET.length)];
     });
+
+    const fillers = this.source.map((tile, index) => (tile.fromSeed ? -1 : index)).filter((index) => index >= 0);
+    if (fillers.length && this.pick(100) < 45) {
+      const index = fillers[this.pick(fillers.length)];
+      this.source[index].letter = '★';
+      this.source[index].wild = true;
+    }
   }
 }

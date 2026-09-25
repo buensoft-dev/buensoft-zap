@@ -128,8 +128,25 @@ button, input { font-family: inherit; }
 
 .brand {
   display: flex;
-  flex-direction: column;
-  gap: 4px;
+  flex-direction: row;
+  align-items: center;
+  gap: 12px;
+}
+
+.game-logo {
+  display: block;
+  width: min(280px, 78%);
+  height: auto;
+  margin: 0 auto 8px;
+  border-radius: 28px;
+  background: #fff;
+}
+
+.brand-mark {
+  width: 64px;
+  height: 64px;
+  object-fit: contain;
+  flex: none;
 }
 
 .eyebrow {
@@ -800,6 +817,8 @@ a.google {
   .app { padding: 10px 10px calc(12px + env(safe-area-inset-bottom)); }
   .topbar { flex-direction: column; align-items: stretch; gap: 8px; margin-bottom: 8px; }
   h1 { font-size: 28px; }
+  .brand-mark { width: 48px; height: 48px; }
+  .game-logo { width: min(220px, 70%); }
   .stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
   .stat { min-width: 0; padding: 6px; text-align: center; }
   .stat strong { font-size: 16px; }

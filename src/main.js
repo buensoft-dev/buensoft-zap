@@ -521,7 +521,7 @@ function menuHtml() {
   return `
     <div class="overlay">
       <div class="sheet">
-        <p class="eyebrow">Buensoft Zap</p>
+        <img class="game-logo" src="/logo.jpg" alt="Buensoft Zap" />
         <h2>Arma palabras antes de que se acabe el tiempo</h2>
         <p class="hint">${mode.hint} Hay 10 filas de 7 letras. El reloj avanza solo por las filas; cada palabra válida te da fichas nuevas y puntos según el modo (nivel × letras × 10). Las palabras no se pueden repetir.</p>
         <div class="choices">${modes}</div>
@@ -611,8 +611,11 @@ function render() {
     <div class="app">
       <header class="topbar">
         <div class="brand">
-          <span class="eyebrow">${mode.label}</span>
-          <h1>Buensoft Zap</h1>
+          <img class="brand-mark" src="/favicon.png" alt="" />
+          <div>
+            <span class="eyebrow">${mode.label}</span>
+            <h1>Buensoft Zap</h1>
+          </div>
         </div>
         <div class="stats">
           <div class="stat"><span>Nivel</span><strong>${game ? game.level : 1}</strong></div>

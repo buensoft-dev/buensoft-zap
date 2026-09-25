@@ -638,7 +638,32 @@ a.google {
   padding: 4px 0 0 18px;
   border-left: 1px solid var(--line);
 }
-.menu-scores .board-title { margin-top: 0; }
+.compete-panel { margin-top: 16px; padding-top: 8px; border-top: 1px solid var(--line); }
+.invite-link { display: flex; gap: 8px; align-items: center; }
+.invite-link code { flex: 1; overflow: auto; padding: 8px 10px; border-radius: 10px; background: rgba(255,248,236,.06); }
+.roster { list-style: none; margin: 10px 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.roster li { display: flex; gap: 8px; align-items: center; justify-content: space-between; }
+.roster em { color: var(--muted); font-style: normal; }
+.minis { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; margin: 12px 0; }
+.mini { border: 1px solid var(--line); border-radius: 16px; padding: 10px; }
+.mini header { display: flex; justify-content: space-between; gap: 8px; }
+.mini ol { list-style: none; margin: 8px 0 0; padding: 0; font-size: 13px; }
+.mini li { display: flex; justify-content: space-between; gap: 8px; }
+.mini li.struck { text-decoration: line-through; color: var(--bad); }
+.podium { display: flex; align-items: flex-end; justify-content: center; gap: 12px; min-height: 220px; margin: 18px 0; }
+.podium-place {
+  width: 120px;
+  text-align: center;
+  border-radius: 16px 16px 0 0;
+  background: linear-gradient(180deg, var(--gold-2), var(--gold));
+  color: var(--on-gold);
+  animation: rise 900ms ease both;
+}
+.podium-place strong, .podium-place span, .podium-place em { display: block; }
+.place-1 { height: 180px; animation-delay: .15s; }
+.place-2 { height: 140px; }
+.place-3 { height: 110px; animation-delay: .3s; }
+@keyframes rise { from { transform: translateY(40px); opacity: 0; } to { transform: none; opacity: 1; } }
 
 .choices, .skills {
   display: flex;

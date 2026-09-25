@@ -1,4 +1,4 @@
-import crypto from 'crypto';
+import { rememberUser } from './users.js';
 
 const COOKIE = 'zap_user';
 const STATE = 'zap_oauth';
@@ -59,8 +59,10 @@ export function currentUser(req) {
 }
 
 export function authRoutes(app) {
-  app.get('/api/auth/me', (req, res) => {
-    res.json({ configured: configured(), user: currentUser(req) });
+  app.get('/api/auth/me', async (req, res) => {
+    const user = currentUser(req);
+    if (user) await rememberUser(user);
+    res.json({ configured: configured(), user });
   });
 
   app.post('/api/auth/logout', (req, res) => {
@@ -119,6 +121,7 @@ export function authRoutes(app) {
         res.redirect(`${back}?auth=error`);
         return;
       }
+      await rememberUser({ id: profile.sub, name, email: profile.email || '' });
       const session = sign({
         sub: profile.sub,
         name,

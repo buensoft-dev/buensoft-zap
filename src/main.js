@@ -1,5 +1,6 @@
 import './style.css';
 import { Game, MODES, SKILLS } from './game.js';
+import { historyHtml, matchHtml, postBoard } from './compete.js';
 
 const app = document.querySelector('#app');
 const cache = new Map();
@@ -25,6 +26,13 @@ const state = {
   recordFlash: false,
   user: null,
   authReady: false,
+  match: null,
+  users: [],
+  history: [],
+  invites: [],
+  showCompete: false,
+  competeSeats: 4,
+  competeRounds: 2,
 };
 
 const THEMES = [
@@ -42,6 +50,7 @@ let timerId = 0;
 let flashId = 0;
 let animating = false;
 let recordTimer = 0;
+let matchPoll = 0;
 
 const sounds = {
   ctx: null,
@@ -139,6 +148,13 @@ function startClocks() {
     const result = state.game.tick();
     if (result.ended) {
       stopClocks();
+      if (state.match) {
+        postBoard(state, true).then(() => {
+          state.screen = 'match';
+          render();
+        });
+        return;
+      }
       state.screen = 'review';
       state.selectedWord = state.game.suggested[0] || '';
       state.savedId = null;
@@ -319,6 +335,16 @@ function finishSubmit() {
   else if (result.ok) sounds.win();
   else sounds.fail();
   if (result.ok) celebrateRecord();
+  if (state.match) {
+    postBoard(state, Boolean(result.finished)).then(() => {
+      if (result.finished || state.match?.phase === 'review') {
+        stopClocks();
+        state.screen = 'match';
+      }
+      render();
+    });
+    return;
+  }
   if (result.levelUp) {
     stopClocks();
     state.screen = 'splash';
@@ -510,6 +536,112 @@ function saveFormHtml(game) {
   `;
 }
 
+function competePanel() {
+  const invites = state.invites.map((match) => `
+    <li>
+      <span>${match.hostName || 'Invitación'}</span>
+      <button class="choice" data-answer="yes" data-match="${match.id}" type="button">Aceptar</button>
+      <button class="ghost" data-answer="no" data-match="${match.id}" type="button">Negar</button>
+    </li>
+  `).join('');
+  return `
+    <section class="compete-panel">
+      <p class="menu-label">Nueva competencia</p>
+      <div class="choices">
+        ${[2, 3, 4, 5, 6].map((count) => `<button class="choice ${state.competeSeats === count ? 'active' : ''}" data-seats="${count}" type="button">${count} jugadores</button>`).join('')}
+      </div>
+      <div class="choices">
+        ${[1, 2, 3, 4, 5].map((count) => `<button class="choice ${state.competeRounds === count ? 'active' : ''}" data-rounds="${count}" type="button">${count} ${count === 1 ? 'ronda' : 'rondas'}</button>`).join('')}
+      </div>
+      <button class="primary" id="create-match" type="button">CREAR PARTIDA</button>
+      <p class="menu-label">Invitaciones</p>
+      ${invites ? `<ul class="roster">${invites}</ul>` : '<p class="hint">No tienes invitaciones pendientes.</p>'}
+      <p class="menu-label">Historial</p>
+      ${historyHtml(state.history)}
+    </section>
+  `;
+}
+
+async function openCompete() {
+  if (!state.user) {
+    state.error = 'Entra con Google para competir';
+    render();
+    return;
+  }
+  state.showCompete = !state.showCompete;
+  if (state.showCompete) {
+    const [users, history, invites] = await Promise.all([
+      fetch('/api/users').then((response) => response.json()).catch(() => []),
+      fetch('/api/history').then((response) => response.json()).catch(() => []),
+      fetch('/api/invites').then((response) => response.json()).catch(() => []),
+    ]);
+    state.users = Array.isArray(users) ? users : [];
+    state.history = Array.isArray(history) ? history : [];
+    state.invites = Array.isArray(invites) ? invites : [];
+  }
+  render();
+}
+
+function watchMatch() {
+  clearInterval(matchPoll);
+  if (!state.match?.id) return;
+  matchPoll = setInterval(() => { refreshMatch(); }, 1200);
+}
+
+async function refreshMatch() {
+  if (!state.match?.id || state.screen === 'play' && document.hidden) return;
+  const response = await fetch(`/api/matches/${state.match.id}`);
+  if (!response.ok) return;
+  const next = await response.json();
+  const previous = state.match.phase;
+  state.match = next;
+  if (previous === 'playing' && next.phase === 'review' && state.screen === 'play') {
+    stopClocks();
+    await postBoard(state, false);
+    state.screen = 'match';
+    render();
+    return;
+  }
+  if (next.phase === 'playing' && state.screen === 'match' && previous !== 'playing') {
+    await beginCompeteRound();
+    return;
+  }
+  if (state.screen === 'match') render();
+}
+
+async function beginCompeteRound() {
+  const match = state.match;
+  const mode = modeById(match.modeId);
+  const dictionary = await loadDictionary(mode);
+  state.game = new Game(dictionary, match.skillId, { seed: match.seed, compete: true, modeId: match.modeId });
+  state.game.start();
+  state.screen = 'play';
+  state.followedRow = null;
+  startClocks();
+  render();
+}
+
+async function enterMatch(id) {
+  if (!state.user) {
+    state.error = 'Entra con Google para unirte a la competencia';
+    state.pendingMatch = id;
+    render();
+    return;
+  }
+  const response = await fetch(`/api/matches/${id}/join`, { method: 'POST' });
+  const data = await response.json();
+  if (!response.ok) {
+    state.error = data.error || 'No se pudo entrar';
+    render();
+    return;
+  }
+  state.match = data;
+  state.screen = 'match';
+  state.showCompete = false;
+  watchMatch();
+  render();
+}
+
 function menuHtml() {
   const mode = modeById(state.modeId);
   const modes = MODES.map((item) => `
@@ -541,7 +673,11 @@ function menuHtml() {
             </div>
             ${accountHtml()}
             ${state.error ? `<p class="hint">${state.error}</p>` : ''}
-            <button class="primary" id="play">JUGAR</button>
+            <div class="sheet-actions">
+              <button class="primary" id="play">JUGAR</button>
+              <button class="ghost" id="compete">COMPETENCIA</button>
+            </div>
+            ${state.showCompete ? competePanel() : ''}
           </section>
           <section class="menu-scores">
             <h3 class="board-title">${scoreTitle()}</h3>
@@ -640,7 +776,7 @@ function render() {
         <div class="layout">
           <div class="side-col">
             <aside class="card meaning">${meaningBlock(game)}</aside>
-            ${state.screen === 'play' ? `
+            ${state.screen === 'play' && !state.match ? `
               <div class="target-bar ${state.recordShown ? 'beaten' : ''}">
                 <span>${state.recordShown ? 'Nuevo top score' : 'Top a vencer'}</span>
                 <strong>${state.targetPoints || '—'}</strong>
@@ -654,7 +790,8 @@ function render() {
     </div>
     ${state.screen === 'menu' || state.screen === 'loading' && !game ? menuHtml() : ''}
     ${state.screen === 'splash' ? splashHtml() : ''}
-    ${state.screen === 'review' && game ? reviewHtml(game) : ''}
+    ${state.screen === 'review' && game && !state.match ? reviewHtml(game) : ''}
+    ${state.screen === 'match' ? matchHtml(state) : ''}
     ${state.recordFlash && game ? `
       <div class="record-flash" aria-live="polite">
         <div>
@@ -684,6 +821,120 @@ function bind() {
   });
   const play = app.querySelector('#play');
   if (play) play.onclick = beginMatch;
+  const compete = app.querySelector('#compete');
+  if (compete) compete.onclick = openCompete;
+  app.querySelectorAll('[data-seats]').forEach((button) => {
+    button.onclick = () => {
+      state.competeSeats = Number(button.dataset.seats);
+      render();
+    };
+  });
+  app.querySelectorAll('[data-rounds]').forEach((button) => {
+    button.onclick = () => {
+      state.competeRounds = Number(button.dataset.rounds);
+      render();
+    };
+  });
+  const createMatch = app.querySelector('#create-match');
+  if (createMatch) {
+    createMatch.onclick = async () => {
+      const response = await fetch('/api/matches', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          seats: state.competeSeats,
+          rounds: state.competeRounds,
+          modeId: state.modeId,
+          skillId: state.skillId,
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        state.error = data.error || 'No se pudo crear la partida';
+        render();
+        return;
+      }
+      state.match = data;
+      state.screen = 'match';
+      history.replaceState(null, '', `/?partida=${data.id}`);
+      watchMatch();
+      const users = await fetch('/api/users').then((item) => item.json()).catch(() => []);
+      state.users = Array.isArray(users) ? users : [];
+      render();
+    };
+  }
+  app.querySelectorAll('[data-invite]').forEach((button) => {
+    button.onclick = async () => {
+      await fetch(`/api/matches/${state.match.id}/invite`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: button.dataset.invite, name: button.dataset.name }),
+      }).then((response) => response.json()).then((data) => {
+        state.match = data;
+        render();
+      });
+    };
+  });
+  app.querySelectorAll('[data-remove]').forEach((button) => {
+    button.onclick = async () => {
+      const response = await fetch(`/api/matches/${state.match.id}/remove`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: button.dataset.remove }),
+      });
+      state.match = await response.json();
+      render();
+    };
+  });
+  app.querySelectorAll('[data-answer]').forEach((button) => {
+    button.onclick = async () => {
+      await fetch(`/api/matches/${button.dataset.match}/invite/answer`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ accept: button.dataset.answer === 'yes' }),
+      });
+      if (button.dataset.answer === 'yes') enterMatch(button.dataset.match);
+      else openCompete();
+    };
+  });
+  const matchReady = app.querySelector('#match-ready');
+  if (matchReady) {
+    matchReady.onclick = async () => {
+      const response = await fetch(`/api/matches/${state.match.id}/ready`, { method: 'POST' });
+      state.match = await response.json();
+      if (state.match.phase === 'playing') await beginCompeteRound();
+      else render();
+    };
+  }
+  const matchLeave = app.querySelector('#match-leave');
+  if (matchLeave) {
+    matchLeave.onclick = async () => {
+      await fetch(`/api/matches/${state.match.id}/leave`, { method: 'POST' });
+      clearInterval(matchPoll);
+      state.match = null;
+      state.game = null;
+      state.screen = 'menu';
+      history.replaceState(null, '', '/');
+      render();
+    };
+  }
+  const matchHome = app.querySelector('#match-home');
+  if (matchHome) {
+    matchHome.onclick = () => {
+      clearInterval(matchPoll);
+      state.match = null;
+      state.game = null;
+      state.screen = 'menu';
+      history.replaceState(null, '', '/');
+      render();
+    };
+  }
+  const copyLink = app.querySelector('#copy-link');
+  if (copyLink) {
+    copyLink.onclick = () => {
+      navigator.clipboard?.writeText(`${location.origin}/?partida=${state.match.id}`);
+    };
+  }
   app.querySelectorAll('[data-theme]').forEach((button) => {
     button.onclick = () => {
       state.theme = button.dataset.theme;
@@ -772,7 +1023,9 @@ Promise.all([
   if (new URLSearchParams(window.location.search).get('auth') === 'error') {
     state.error = 'Google no dejó entrar. Tu correo tiene que estar en los usuarios de prueba.';
   }
-  render();
+  const partida = new URLSearchParams(window.location.search).get('partida') || state.pendingMatch;
+  if (partida && state.user) enterMatch(partida);
+  else render();
 });
 
 window.addEventListener('pointerdown', () => sounds.ready(), { once: true });

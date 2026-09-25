@@ -44,7 +44,10 @@ export class Game {
     this.skill = SKILLS.find((item) => item.id === skillId) || SKILLS[1];
     this.daily = Boolean(options.daily);
     this.day = options.day || '';
-    this.rng = this.daily ? mulberry32(hashString(`${this.day}|${options.modeId || ''}`)) : null;
+    this.rng = options.seed
+      ? mulberry32(hashString(String(options.seed)))
+      : (this.daily ? mulberry32(hashString(`${this.day}|${options.modeId || ''}`)) : null);
+    this.compete = Boolean(options.compete);
     this.combo = 0;
     this.comboTimerRow = -1;
     this.bonus = '';
@@ -77,6 +80,19 @@ export class Game {
   get marker() {
     if (this.wordsCompleted === 0) return 0;
     return this.intScore - 1;
+  }
+
+  snapshot() {
+    const words = [];
+    this.grid.forEach((row, index) => {
+      const word = row.filter((cell) => cell.kind === 'locked').map((cell) => cell.letter).join('');
+      if (word) words.push({ word, points: this.rowPoints[index] || 0 });
+    });
+    return {
+      words,
+      grid: this.grid.map((row) => row.map((cell) => cell.letter || '')),
+      pointsTotal: this.pointsTotal,
+    };
   }
 
   start() {
@@ -205,6 +221,11 @@ export class Game {
     this.deal();
 
     if (this.playerRow >= ROWS) {
+      if (this.compete) {
+        this.playing = false;
+        this.over = true;
+        return { ok: true, zap, combo: this.combo, finished: true };
+      }
       return { ok: true, zap, combo: this.combo, levelUp: this.advanceLevel() };
     }
     return { ok: true, zap, combo: this.combo };

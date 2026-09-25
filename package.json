@@ -1,0 +1,21 @@
+{
+  "name": "buensoft-zap",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "export-dict": "node scripts/export-dictionaries.js",
+    "dev": "concurrently -k \"node server.js\" \"vite\"",
+    "build": "vite build",
+    "preview": "vite preview",
+    "start": "node server.js"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2",
+    "mdb-reader": "^3.0.0",
+    "vite": "^6.3.5"
+  },
+  "dependencies": {
+    "express": "^4.21.2",
+    "pg": "^8.14.1"
+  }
+}

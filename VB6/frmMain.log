@@ -1,0 +1,6 @@
+Line 40: Class RichTextLib.RichTextBox of control txtDesc was not a loaded control class.
+Line 46: The property name _ExtentX in txtDesc is invalid.
+Line 47: The property name _ExtentY in txtDesc is invalid.
+Line 48: The property name _Version in txtDesc is invalid.
+Line 51: The property name ScrollBars in txtDesc is invalid.
+Line 53: The property name TextRTF in txtDesc is invalid.

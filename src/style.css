@@ -413,6 +413,83 @@ h1 { font-size: 40px; line-height: 0.95; }
   box-shadow: 0 8px 0 #1d4ed8, 0 12px 16px rgba(0, 40, 120, 0.3);
 }
 
+.target-bar {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 10px;
+  margin: 0 0 10px;
+  padding: 8px 14px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: rgba(255, 248, 236, 0.06);
+  color: var(--cream);
+}
+
+.target-bar span {
+  color: var(--muted);
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.target-bar strong {
+  font-family: Fraunces, serif;
+  font-size: 28px;
+  color: var(--gold-2);
+}
+
+.target-bar em {
+  font-style: normal;
+  color: var(--cream);
+}
+
+.target-bar.beaten {
+  border-color: #8dffc0;
+  box-shadow: 0 0 18px rgba(141, 255, 192, 0.35);
+}
+
+.record-flash {
+  position: fixed;
+  inset: 0;
+  z-index: 8;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+}
+
+.record-flash div {
+  min-width: min(420px, 90vw);
+  text-align: center;
+  padding: 22px 28px;
+  border-radius: 28px;
+  color: var(--on-gold);
+  background: linear-gradient(180deg, #fff6c2, var(--gold));
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.35);
+  animation: recordPop 1.7s ease forwards;
+}
+
+.record-flash p {
+  margin: 0;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.record-flash strong {
+  display: block;
+  font-family: Fraunces, serif;
+  font-size: 64px;
+  line-height: 1;
+}
+
+@keyframes recordPop {
+  0% { transform: scale(0.6); opacity: 0; }
+  18% { transform: scale(1.06); opacity: 1; }
+  70% { transform: scale(1); opacity: 1; }
+  100% { transform: scale(1.08); opacity: 0; }
+}
+
 .fx {
   margin: 0 8px 8px;
   text-align: center;
@@ -451,6 +528,20 @@ h1 { font-size: 40px; line-height: 0.95; }
   background: linear-gradient(180deg, var(--gold-2), var(--gold));
   color: var(--on-gold);
   min-width: 210px;
+}
+
+.account {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 12px 0;
+}
+
+a.google {
+  display: inline-block;
+  text-decoration: none;
+  text-align: center;
 }
 
 .primary:disabled {

@@ -19,6 +19,12 @@ const state = {
   followedRow: null,
   daily: false,
   theme: localStorage.getItem('zap-theme') || 'neon',
+  targetPoints: 0,
+  targetName: '',
+  recordShown: false,
+  recordFlash: false,
+  user: null,
+  authReady: false,
 };
 
 const THEMES = [
@@ -35,6 +41,7 @@ function applyTheme() {
 let timerId = 0;
 let flashId = 0;
 let animating = false;
+let recordTimer = 0;
 
 const sounds = {
   ctx: null,
@@ -89,6 +96,11 @@ const sounds = {
     noise.connect(amp).connect(ctx.destination);
     noise.start();
     this.tone(90, 0.16, 'sine', 0.1);
+  },
+  record() {
+    [523, 659, 784, 1046].forEach((freq, index) => {
+      setTimeout(() => this.tone(freq, 0.16, 'square', 0.07), index * 80);
+    });
   },
 };
 
@@ -163,10 +175,15 @@ async function refreshScores() {
 
 async function saveScore(event) {
   event.preventDefault();
-  const name = playerName(state.playerName).trim();
+  if (!state.user) {
+    state.saveError = 'Entra con Google para guardar el puntaje';
+    render();
+    return;
+  }
+  const name = playerName(state.user.name).trim();
   state.playerName = name;
   if (!name.replace(/ /g, '')) {
-    state.saveError = 'Escribe tu nombre, máximo 20 letras';
+    state.saveError = 'El nombre de Google no tiene letras válidas';
     render();
     return;
   }
@@ -174,7 +191,7 @@ async function saveScore(event) {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      name,
+      name: state.user?.name || name,
       points: state.game.pointsTotal,
       marker: state.game.marker,
       level: state.game.level,
@@ -196,6 +213,28 @@ async function saveScore(event) {
   render();
 }
 
+function captureTarget() {
+  const top = visibleScores()[0];
+  state.targetPoints = top ? Number(top.points) || 0 : 0;
+  state.targetName = top?.name || '';
+  state.recordShown = false;
+  state.recordFlash = false;
+}
+
+function celebrateRecord() {
+  const game = state.game;
+  if (!game || state.recordShown || state.targetPoints <= 0) return;
+  if (game.pointsTotal <= state.targetPoints) return;
+  state.recordShown = true;
+  state.recordFlash = true;
+  sounds.record();
+  clearTimeout(recordTimer);
+  recordTimer = setTimeout(() => {
+    state.recordFlash = false;
+    app.querySelector('.record-flash')?.remove();
+  }, 1700);
+}
+
 function beginMatch() {
   state.savedId = null;
   state.saveError = '';
@@ -203,8 +242,9 @@ function beginMatch() {
   const skill = skillById(state.skillId);
   state.screen = 'loading';
   render();
-  loadDictionary(mode)
-    .then((dictionary) => {
+  Promise.all([loadDictionary(mode), refreshScores()])
+    .then(([dictionary]) => {
+      captureTarget();
       state.game = new Game(dictionary, skill.id, {
         daily: state.daily,
         day: today(),
@@ -278,6 +318,7 @@ function finishSubmit() {
   if (result.ok && result.zap) sounds.zap();
   else if (result.ok) sounds.win();
   else sounds.fail();
+  if (result.ok) celebrateRecord();
   if (result.levelUp) {
     stopClocks();
     state.screen = 'splash';
@@ -441,15 +482,28 @@ function scoresHtml() {
   return `<ol class="tops">${rows}</ol>`;
 }
 
+function accountHtml() {
+  if (!state.authReady) return '';
+  if (state.user) {
+    return `<div class="account"><span>Entraste como <strong>${escapeHtml(state.user.name)}</strong></span><button class="ghost" id="logout" type="button">Salir</button></div>`;
+  }
+  return `<a class="primary google" href="/api/auth/google">Entrar con Google</a>`;
+}
+
 function saveFormHtml(game) {
   if (state.savedId) {
     return `<p class="saved">Puntuación de <strong>${escapeHtml(state.playerName)}</strong> guardada: ${game.pointsTotal} puntos.</p>`;
   }
+  if (!state.user) {
+    return `
+      <p>Tu puntuación es <strong>${game.pointsTotal}</strong> puntos. Entra con Google para guardarla.</p>
+      ${accountHtml()}
+      ${state.saveError ? `<p class="hint bad-note">${escapeHtml(state.saveError)}</p>` : ''}
+    `;
+  }
   return `
     <form id="save-score" class="save-score">
-      <p>Tu puntuación es <strong>${game.pointsTotal}</strong> puntos. El nombre admite máximo 20 letras.</p>
-      <input id="player-name" maxlength="20" placeholder="Tu nombre" value="${escapeHtml(state.playerName)}" autocomplete="name" />
-      <span class="name-count">${playerName(state.playerName).trim().length}/20</span>
+      <p>Tu puntuación es <strong>${game.pointsTotal}</strong> puntos y se guardará como <strong>${escapeHtml(state.user.name)}</strong>.</p>
       <button class="primary" type="submit">GUARDAR SCORE</button>
     </form>
     ${state.saveError ? `<p class="hint bad-note">${escapeHtml(state.saveError)}</p>` : ''}
@@ -476,6 +530,7 @@ function menuHtml() {
         <div class="themes">
           ${THEMES.map((theme) => `<button class="swatch ${theme.id === state.theme ? 'active' : ''}" data-theme="${theme.id}">${theme.name}</button>`).join('')}
         </div>
+        ${accountHtml()}
         ${state.error ? `<p class="hint">${state.error}</p>` : ''}
         <h3 class="board-title">${scoreTitle()}</h3>
         ${scoresHtml()}
@@ -566,6 +621,13 @@ function render() {
           <div class="stat"><span>Puntos</span><strong>${game ? game.pointsTotal : 0}</strong></div>
         </div>
       </header>
+      ${game && state.screen === 'play' ? `
+        <div class="target-bar ${state.recordShown ? 'beaten' : ''}">
+          <span>${state.recordShown ? 'Nuevo top score' : 'Top a vencer'}</span>
+          <strong>${state.targetPoints || '—'}</strong>
+          <em>${state.targetName ? escapeHtml(state.targetName) : 'Sé el primero'}</em>
+        </div>
+      ` : ''}
       ${state.screen === 'loading' ? '<p class="hint">Cargando diccionario…</p>' : ''}
       ${game && state.screen !== 'menu' ? `
         <div class="layout">
@@ -577,6 +639,14 @@ function render() {
     ${state.screen === 'menu' || state.screen === 'loading' && !game ? menuHtml() : ''}
     ${state.screen === 'splash' ? splashHtml() : ''}
     ${state.screen === 'review' && game ? reviewHtml(game) : ''}
+    ${state.recordFlash && game ? `
+      <div class="record-flash" aria-live="polite">
+        <div>
+          <p>¡Nuevo top score!</p>
+          <strong>${game.pointsTotal}</strong>
+        </div>
+      </div>
+    ` : ''}
   `;
   bind();
   followRow();
@@ -653,6 +723,14 @@ function bind() {
   app.querySelectorAll('#home, #home-board').forEach((button) => {
     button.onclick = goHome;
   });
+  const logout = app.querySelector('#logout');
+  if (logout) {
+    logout.onclick = async () => {
+      await fetch('/api/auth/logout', { method: 'POST' });
+      state.user = null;
+      render();
+    };
+  }
   const saveForm = app.querySelector('#save-score');
   if (saveForm) saveForm.onsubmit = saveScore;
   const nameInput = app.querySelector('#player-name');
@@ -668,7 +746,18 @@ function bind() {
 }
 
 applyTheme();
-refreshScores().finally(() => render());
+Promise.all([
+  refreshScores(),
+  fetch('/api/auth/me').then((response) => response.json()).catch(() => ({ user: null })),
+]).then(([, auth]) => {
+  state.authReady = true;
+  state.user = auth.user || null;
+  if (state.user) state.playerName = state.user.name;
+  if (new URLSearchParams(window.location.search).get('auth') === 'error') {
+    state.error = 'Google no dejó entrar. Tu correo tiene que estar en los usuarios de prueba.';
+  }
+  render();
+});
 
 window.addEventListener('pointerdown', () => sounds.ready(), { once: true });
 window.addEventListener('keydown', onKey);

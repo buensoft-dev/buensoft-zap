@@ -3,6 +3,7 @@ import path from 'path';
 import { existsSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { addScore, listScores } from './server/scores.js';
+import { authRoutes } from './server/auth.js';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -10,6 +11,8 @@ const port = process.env.PORT || 3001;
 const dist = path.join(root, 'dist');
 
 app.use(express.json());
+app.set('trust proxy', 1);
+authRoutes(app);
 
 app.get('/api/scores', async (_req, res) => {
   try {

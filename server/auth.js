@@ -1,3 +1,4 @@
+import crypto from 'crypto';
 import { rememberUser } from './users.js';
 
 const COOKIE = 'zap_user';
@@ -61,7 +62,9 @@ export function currentUser(req) {
 export function authRoutes(app) {
   app.get('/api/auth/me', async (req, res) => {
     const user = currentUser(req);
-    if (user) await rememberUser(user);
+    if (user) {
+      try { await rememberUser(user); } catch { /* la lista de jugadores puede esperar */ }
+    }
     res.json({ configured: configured(), user });
   });
 
@@ -121,7 +124,7 @@ export function authRoutes(app) {
         res.redirect(`${back}?auth=error`);
         return;
       }
-      await rememberUser({ id: profile.sub, name, email: profile.email || '' });
+      try { await rememberUser({ id: profile.sub, name, email: profile.email || '' }); } catch { /* el ingreso sigue aunque falle la lista */ }
       const session = sign({
         sub: profile.sub,
         name,

@@ -37,6 +37,14 @@ function emptyCell() {
   return { letter: '', source: -1, kind: 'open' };
 }
 
+function pickSurprise(key, level) {
+  const rng = mulberry32(hashString(`sorpresa|${key}|${level}`));
+  return {
+    row: Math.floor(rng() * ROWS),
+    kind: rng() < 0.5 ? 'double' : 'long',
+  };
+}
+
 export class Game {
   constructor(dictionary, skillId, options = {}) {
     this.dictionary = dictionary;
@@ -48,6 +56,12 @@ export class Game {
       ? mulberry32(hashString(String(options.seed)))
       : (this.daily ? mulberry32(hashString(`${this.day}|${options.modeId || ''}`)) : null);
     this.compete = Boolean(options.compete);
+    this.surpriseKey = options.seed
+      ? String(options.seed)
+      : (this.daily ? `${this.day}|${options.modeId || ''}` : `libre|${Date.now()}|${Math.random()}`);
+    this.maxCombo = 0;
+    this.longestWord = '';
+    this.zapCount = 0;
     this.combo = 0;
     this.comboTimerRow = -1;
     this.bonus = '';
@@ -75,6 +89,10 @@ export class Game {
     this.tone = '';
     this.struck = false;
     this.deal();
+    this.surprise = pickSurprise(this.surpriseKey, this.level);
+    this.tipUsed = false;
+    this.tipped = new Set();
+    this.tipSlot = -1;
   }
 
   get marker() {
@@ -134,7 +152,7 @@ export class Game {
     if (slot === -1) return;
     this.clearFeedback();
     tile.hidden = true;
-    row[slot] = { letter: tile.letter, source: sourceIndex, kind: 'filled', wild: Boolean(tile.wild) };
+    row[slot] = { letter: tile.letter, source: sourceIndex, kind: 'filled', wild: Boolean(tile.wild), tipped: this.tipped.has(sourceIndex) };
   }
 
   removeFrom(slotIndex) {
@@ -196,6 +214,7 @@ export class Game {
     else this.combo = 1;
     this.comboTimerRow = this.timerRow;
     const zap = length === SLOTS;
+    const surprise = this.surprise && this.surprise.row === this.playerRow ? this.surprise.kind : '';
     row.forEach((cell, index) => {
       if (cell.kind === 'open') row[index] = { letter: '', source: -1, kind: 'blank' };
       else if (cell.kind === 'filled') row[index] = { ...cell, kind: 'locked' };
@@ -204,9 +223,22 @@ export class Game {
     this.used.add(word);
     this.wordsCompleted += 1;
     this.intScore += length + 1;
-    const points = this.skill.id * length * 10 * this.combo + (zap ? this.skill.id * 100 : 0);
+    let points = this.skill.id * length * 10 * this.combo + (zap ? this.skill.id * 100 : 0);
+    const tags = [];
+    if (this.combo > 1) tags.push(`COMBO x${this.combo}`);
+    if (zap) tags.push('ZAP');
+    if (surprise === 'double') {
+      points *= 2;
+      tags.push('DOBLE');
+    } else if (surprise === 'long') {
+      tags.push('FILA LARGA');
+      if (length < 5) points = 0;
+    }
     this.pointsTotal += points;
-    this.bonus = [this.combo > 1 ? `COMBO x${this.combo}` : '', zap ? 'ZAP' : ''].filter(Boolean).join(' · ');
+    this.bonus = tags.join(' · ');
+    if (this.combo > this.maxCombo) this.maxCombo = this.combo;
+    if (word.length > this.longestWord.length) this.longestWord = word;
+    if (zap) this.zapCount += 1;
     this.rowPoints[this.playerRow] = points;
     this.numberColors[this.playerRow] = 'done';
     if (this.timerRow === this.playerRow) this.flash = false;
@@ -271,6 +303,10 @@ export class Game {
     this.combo = 0;
     this.comboTimerRow = -1;
     this.bonus = '';
+    this.surprise = pickSurprise(this.surpriseKey, this.level);
+    this.tipUsed = false;
+    this.tipped = new Set();
+    this.tipSlot = -1;
     return {
       level: this.level,
       splash: `NIVEL ${this.level}`,
@@ -339,6 +375,8 @@ export class Game {
 
   deal() {
     this.source = Array.from({ length: TILES }, () => ({ letter: '', hidden: false, wild: false, fromSeed: false }));
+    this.tipped = new Set();
+    this.tipSlot = -1;
 
     let seed = '';
     const unused = this.words.filter((word) => !this.used.has(word));
@@ -382,5 +420,54 @@ export class Game {
       this.source[index].letter = '★';
       this.source[index].wild = true;
     }
+  }
+
+  useTip() {
+    if (this.tipUsed || !this.playing || this.over) return false;
+    const indexes = this.hintTiles();
+    if (!indexes.length) {
+      this.warning = 'Con estas fichas no hay una palabra para revelar';
+      return false;
+    }
+    this.tipUsed = true;
+    this.tipped = new Set(indexes);
+    this.warning = '';
+    const before = this.filledCount();
+    this.place(indexes[0]);
+    if (this.filledCount() > before) this.tipSlot = this.filledCount() - 1;
+    return true;
+  }
+
+  hintTiles() {
+    const visible = this.source
+      .map((tile, index) => ({ tile, index }))
+      .filter(({ tile }) => !tile.hidden && tile.letter);
+    const seed = this.suggested[this.suggested.length - 1];
+    if (seed && !this.used.has(seed)) {
+      const seeded = this.assignTiles(seed, visible.filter(({ tile }) => tile.fromSeed));
+      if (seeded) return seeded;
+    }
+    let best = [];
+    for (const word of this.words) {
+      if (this.used.has(word) || word.length < MIN_LETTERS || word.length > SLOTS) continue;
+      if (best.length && word.length < best.length) continue;
+      const indexes = this.assignTiles(word, visible);
+      if (indexes && indexes.length >= best.length) best = indexes;
+    }
+    return best;
+  }
+
+  assignTiles(word, tiles) {
+    if (!word) return null;
+    const pool = tiles.map((item) => ({ ...item, used: false }));
+    const indexes = [];
+    for (const letter of word) {
+      let found = pool.find((item) => !item.used && !item.tile.wild && item.tile.letter === letter);
+      if (!found) found = pool.find((item) => !item.used && item.tile.wild);
+      if (!found) return null;
+      found.used = true;
+      indexes.push(found.index);
+    }
+    return indexes;
   }
 }

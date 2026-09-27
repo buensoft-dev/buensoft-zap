@@ -66,7 +66,7 @@ function cleanBoard(body, dict, skillId) {
     if (word.length < 3 || word.length > 7) continue;
     seen.add(word);
     const claimed = Number(item.points) || 0;
-    const max = skillId * word.length * 10 * 10 + skillId * 100;
+    const max = (skillId * word.length * 10 * 10 + skillId * 100) * 2;
     words.push({ word, points: Math.max(0, Math.min(claimed, max)) });
   }
   const grid = Array.isArray(body?.grid) ? body.grid.slice(0, 10).map((row) => (
@@ -101,8 +101,26 @@ function standings(match) {
   return [...match.players].sort((a, b) => b.total - a.total || a.name.localeCompare(b.name));
 }
 
+function liveScores(match) {
+  const counts = new Map();
+  match.players.forEach((player) => {
+    (player.board?.words || []).forEach((item) => {
+      counts.set(item.word, (counts.get(item.word) || 0) + 1);
+    });
+  });
+  const scores = new Map();
+  match.players.forEach((player) => {
+    const round = (player.board?.words || []).reduce((sum, item) => (
+      (counts.get(item.word) || 0) > 1 ? sum : sum + (item.points || 0)
+    ), 0);
+    scores.set(player.userId, (player.total || 0) + round);
+  });
+  return scores;
+}
+
 function publicMatch(match, userId) {
   const ranked = standings(match);
+  const live = liveScores(match);
   return {
     id: match.id,
     hostId: match.hostId,
@@ -121,10 +139,12 @@ function publicMatch(match, userId) {
       userId: player.userId,
       name: player.name,
       ready: player.ready,
+      replay: Boolean(player.replay),
       left: player.left,
       finished: player.finished,
       total: player.total,
       roundScore: player.roundScore,
+      liveScore: live.get(player.userId) || 0,
       board: player.board,
       place: index + 1,
     })),
@@ -212,7 +232,9 @@ async function load(id) {
 
 async function save(match) {
   const matches = await store();
-  if (match.phase === 'podium' && !match.savedHistory) {
+  const lastRound = match.phase === 'podium' || (match.phase === 'review' && match.round >= match.rounds);
+  const boardsIn = activePlayers(match).every((player) => player.board || player.finished);
+  if (!match.savedHistory && lastRound && (match.phase === 'podium' || boardsIn)) {
     match.savedHistory = true;
     await matches.archive(historyRow(match));
   }
@@ -221,13 +243,16 @@ async function save(match) {
 }
 
 function historyRow(match) {
-  const players = standings(match).map((player, index) => ({
-    name: player.name,
-    total: player.total || 0,
-    place: index + 1,
-  }));
+  const score = (player) => (player.total || 0) + (match.phase === 'review' ? (player.roundScore || 0) : 0);
+  const players = [...match.players]
+    .sort((a, b) => score(b) - score(a) || a.name.localeCompare(b.name))
+    .map((player, index) => ({
+      name: player.name,
+      total: score(player),
+      place: index + 1,
+    }));
   return {
-    id: match.id,
+    id: `${match.id}-${match.playIndex || 1}`,
     playedAt: match.createdAt || new Date().toISOString(),
     modeId: match.modeId,
     skillId: match.skillId,
@@ -308,6 +333,7 @@ export function matchRoutes(app) {
           userId: user.id,
           name: user.name,
           ready: false,
+          replay: false,
           left: false,
           finished: false,
           total: 0,
@@ -349,6 +375,7 @@ export function matchRoutes(app) {
           userId: user.id,
           name: user.name,
           ready: false,
+          replay: false,
           left: false,
           finished: false,
           total: 0,
@@ -373,8 +400,17 @@ export function matchRoutes(app) {
       const name = String(req.body?.name || '').slice(0, 20);
       if (!target || !name) fail('Elige un jugador');
       if (match.players.some((player) => player.userId === target && !player.left)) fail('Ese jugador ya está en la sala');
-      const taken = activePlayers(match).length + match.invites.filter((invite) => invite.status === 'pending').length;
+      const pendingOthers = match.invites.filter((invite) => invite.status === 'pending' && invite.userId !== target).length;
+      const taken = activePlayers(match).length + pendingOthers;
       if (taken >= match.seats) fail('No hay lugares libres');
+      const matches = await store();
+      for (const other of await matches.all()) {
+        if (other.id === match.id || !Array.isArray(other.invites)) continue;
+        const nextInvites = other.invites.filter((invite) => !(invite.userId === target && invite.status === 'pending'));
+        if (nextInvites.length === other.invites.length) continue;
+        other.invites = nextInvites;
+        await matches.save(other);
+      }
       match.invites = match.invites.filter((invite) => invite.userId !== target);
       match.invites.push({ userId: target, name, status: 'pending' });
       await save(match);
@@ -399,6 +435,7 @@ export function matchRoutes(app) {
             userId: user.id,
             name: user.name,
             ready: false,
+            replay: false,
             left: false,
             finished: false,
             total: 0,
@@ -473,6 +510,53 @@ export function matchRoutes(app) {
       res.json(publicMatch(match, user.id));
     } catch (error) {
       res.status(error.status || 500).json({ error: error.message || 'No se pudo marcar listo' });
+    }
+  });
+
+  app.post('/api/matches/:id/replay', async (req, res) => {
+    try {
+      const user = requireUser(req);
+      const match = await load(req.params.id);
+      if (!match) fail('La partida no existe', 404);
+      const player = activePlayers(match).find((item) => item.userId === user.id);
+      if (!player) fail('No estás en esta partida', 403);
+      const last = match.phase === 'podium' || (match.phase === 'review' && match.round >= match.rounds);
+      if (!last) fail('La partida todavía no termina');
+      player.replay = true;
+      const room = activePlayers(match);
+      if (room.length < 2) {
+        await save(match);
+        const body = publicMatch(match, user.id);
+        body.replayEmpty = true;
+        res.json(body);
+        return;
+      }
+      if (room.every((item) => item.replay)) {
+        if (match.phase === 'review') {
+          match.players.forEach((item) => {
+            item.total += item.roundScore || 0;
+          });
+        }
+        match.playIndex = (match.playIndex || 1) + 1;
+        match.phase = 'lobby';
+        match.round = 1;
+        match.finisher = null;
+        match.seed = '';
+        match.savedHistory = false;
+        match.createdAt = new Date().toISOString();
+        room.forEach((item) => {
+          item.ready = false;
+          item.replay = false;
+          item.finished = false;
+          item.total = 0;
+          item.roundScore = 0;
+          item.board = null;
+        });
+      }
+      await save(match);
+      res.json(publicMatch(match, user.id));
+    } catch (error) {
+      res.status(error.status || 500).json({ error: error.message || 'No se pudo volver a jugar' });
     }
   });
 

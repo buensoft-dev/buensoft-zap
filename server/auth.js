@@ -87,7 +87,10 @@ export function authRoutes(app) {
     url.searchParams.set('scope', 'openid email profile');
     url.searchParams.set('state', state);
     url.searchParams.set('prompt', 'select_account');
-    res.setHeader('Set-Cookie', `${STATE}=${state}; ${cookieFlags(req, 600)}`);
+    const partida = String(req.query.partida || '').replace(/[^a-f0-9]/gi, '').slice(0, 32);
+    const cookies = [`${STATE}=${state}; ${cookieFlags(req, 600)}`];
+    if (partida) cookies.push(`zap_partida=${partida}; ${cookieFlags(req, 600)}`);
+    res.setHeader('Set-Cookie', cookies);
     res.redirect(url.toString());
   });
 
@@ -131,11 +134,13 @@ export function authRoutes(app) {
         email: profile.email || '',
         exp: Date.now() + 14 * 24 * 60 * 60 * 1000,
       });
+      const partida = String(cookieValue(req, 'zap_partida') || '').replace(/[^a-f0-9]/gi, '').slice(0, 32);
       res.setHeader('Set-Cookie', [
         `${COOKIE}=${encodeURIComponent(session)}; ${cookieFlags(req, 14 * 24 * 60 * 60)}`,
         `${STATE}=; ${cookieFlags(req, 0)}`,
+        `zap_partida=; ${cookieFlags(req, 0)}`,
       ]);
-      res.redirect(back);
+      res.redirect(partida ? `${back}?partida=${partida}` : back);
     } catch {
       res.redirect(`${back}?auth=error`);
     }

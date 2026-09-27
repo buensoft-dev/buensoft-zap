@@ -27,12 +27,16 @@ const state = {
   user: null,
   authReady: false,
   match: null,
+  matchStamp: '',
+  viewPodium: false,
   users: [],
   history: [],
   invites: [],
   playMode: 'solo',
   competeSeats: 4,
   competeRounds: 2,
+  marksLocked: false,
+  marksReport: null,
 };
 
 const THEMES = [
@@ -159,6 +163,7 @@ function startClocks() {
       state.screen = 'review';
       state.selectedWord = state.game.suggested[0] || '';
       state.savedId = null;
+      lockMarks(state.game);
       refreshScores().then(() => {
         if (state.screen === 'review') render();
       });
@@ -255,6 +260,9 @@ function celebrateRecord() {
 function beginMatch() {
   state.savedId = null;
   state.saveError = '';
+  state.marksLocked = false;
+  state.marksReport = null;
+  markDailyPlay();
   const mode = modeById(state.modeId);
   const skill = skillById(state.skillId);
   state.screen = 'loading';
@@ -306,7 +314,7 @@ function paintHud() {
     el.className = `num ${game.numberColors[index]} ${live}`;
   });
   app.querySelectorAll('.row').forEach((row, index) => {
-    row.classList.toggle('is-timer', index === game.timerRow);
+    row.classList.toggle('is-player', index === game.playerRow);
     const badge = row.querySelector('[data-row-clock]');
     if (badge) badge.textContent = game.rowClock(index);
   });
@@ -336,6 +344,7 @@ function finishSubmit() {
   else if (result.ok) sounds.win();
   else sounds.fail();
   if (result.ok) celebrateRecord();
+  if (result.finished || state.game.over) lockMarks(state.game);
   if (state.match) {
     postBoard(state, Boolean(result.finished)).then(() => {
       if (result.finished || state.match?.phase === 'review') {
@@ -414,28 +423,160 @@ function escapeHtml(value) {
     .replaceAll('>', '&gt;');
 }
 
+function shiftDay(iso, delta) {
+  const [year, month, day] = iso.split('-').map(Number);
+  const date = new Date(year, month - 1, day);
+  date.setDate(date.getDate() + delta);
+  const nextMonth = String(date.getMonth() + 1).padStart(2, '0');
+  const nextDay = String(date.getDate()).padStart(2, '0');
+  return `${date.getFullYear()}-${nextMonth}-${nextDay}`;
+}
+
+function streakBucket() {
+  try {
+    const data = JSON.parse(localStorage.getItem('zap-streak') || '{}');
+    return data && typeof data === 'object' ? data : {};
+  } catch {
+    return {};
+  }
+}
+
+function currentStreak() {
+  const row = streakBucket()[state.user?.id || 'local'];
+  if (!row?.count || !row.lastDay) return 0;
+  const now = today();
+  if (row.lastDay === now || row.lastDay === shiftDay(now, -1)) return row.count;
+  return 0;
+}
+
+function markDailyPlay() {
+  if (!state.daily || state.match) return;
+  const all = streakBucket();
+  const id = state.user?.id || 'local';
+  const now = today();
+  const prev = all[id] || { lastDay: '', count: 0 };
+  if (prev.lastDay === now) return;
+  all[id] = { lastDay: now, count: prev.lastDay === shiftDay(now, -1) ? prev.count + 1 : 1 };
+  localStorage.setItem('zap-streak', JSON.stringify(all));
+}
+
+function streakHtml() {
+  if (state.playMode !== 'solo' || !state.daily) return '';
+  const count = currentStreak();
+  if (!count) return '';
+  return `<p class="streak">${count === 1 ? '1 día de racha' : `${count} días seguidos`}</p>`;
+}
+
+function lockMarks(game) {
+  if (!game || state.marksLocked) return;
+  state.marksLocked = true;
+  let all = {};
+  try {
+    all = JSON.parse(localStorage.getItem('zap-marks') || '{}') || {};
+  } catch {
+    all = {};
+  }
+  const key = `${state.user?.id || 'local'}|${state.modeId}|${state.skillId}|${state.daily && !state.match ? 'daily' : 'free'}`;
+  const prev = all[key] || { combo: 0, word: '', zaps: 0 };
+  const current = {
+    combo: game.maxCombo || 0,
+    word: game.longestWord || '',
+    zaps: game.zapCount || 0,
+  };
+  const beaten = {
+    combo: current.combo > (prev.combo || 0) && current.combo > 0,
+    word: current.word.length > String(prev.word || '').length,
+    zaps: current.zaps > (prev.zaps || 0) && current.zaps > 0,
+  };
+  all[key] = {
+    combo: Math.max(prev.combo || 0, current.combo),
+    word: beaten.word ? current.word : (prev.word || current.word || ''),
+    zaps: Math.max(prev.zaps || 0, current.zaps),
+  };
+  localStorage.setItem('zap-marks', JSON.stringify(all));
+  state.marksReport = { current, beaten };
+}
+
+function racePlayers() {
+  if (!state.match) return [];
+  return state.match.players.filter((player) => !player.left).map((player) => {
+    const mine = player.userId === state.user?.id;
+    const score = mine
+      ? (player.total || 0) + (state.game?.pointsTotal || 0)
+      : (player.liveScore ?? player.total ?? 0);
+    return { name: player.name, score, mine };
+  }).sort((a, b) => b.score - a.score || a.name.localeCompare(b.name));
+}
+
+function raceHtml() {
+  if (!state.match || state.screen !== 'play') return '';
+  const players = racePlayers();
+  if (players.length < 2) return '';
+  const best = players[0]?.score || 0;
+  return `<div class="race-bar">${players.map((player) => `
+    <span class="race-chip ${player.mine ? 'mine' : ''} ${player.score === best && best > 0 ? 'lead' : ''}">
+      <em>${escapeHtml(player.name)}</em><strong>${player.score}</strong>
+    </span>
+  `).join('')}</div>`;
+}
+
+function paintRace() {
+  const bar = app.querySelector('.race-bar');
+  if (!bar || !state.match) return;
+  const players = racePlayers();
+  const best = players[0]?.score || 0;
+  bar.innerHTML = players.map((player) => `
+    <span class="race-chip ${player.mine ? 'mine' : ''} ${player.score === best && best > 0 ? 'lead' : ''}">
+      <em>${escapeHtml(player.name)}</em><strong>${player.score}</strong>
+    </span>
+  `).join('');
+}
+
+function surpriseNote(game) {
+  if (!game?.surprise) return '';
+  const row = game.surprise.row + 1;
+  if (game.surprise.kind === 'double') return `<p class="surprise-note">Fila ${row} vale el doble.</p>`;
+  return `<p class="surprise-note">Fila ${row} solo suma con 5 letras o más.</p>`;
+}
+
+function tipButton(game) {
+  const spent = game.tipUsed || !game.playing || game.over;
+  return `
+    <button class="tip-btn ${game.tipUsed ? 'spent' : ''}" id="tip" type="button" ${spent ? 'disabled' : ''} aria-label="Tip" title="Un tip por ronda">
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M9 18h6M10 21h4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+        <path d="M12 3a6 6 0 0 0-3.2 11.1c.5.4.8 1 .8 1.6V17h4.8v-1.3c0-.6.3-1.2.8-1.6A6 6 0 0 0 12 3z" fill="currentColor" fill-opacity=".18" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>
+      </svg>
+    </button>
+  `;
+}
+
 function boardHtml(game) {
   const rows = game.grid.map((row, rowIndex) => {
     const slots = row.map((cell, slotIndex) => {
       const cls = cell.kind;
       const pop = cell.kind === 'filled' && rowIndex === game.playerRow && slotIndex === state.popSlot ? 'pop' : '';
+      const tippedSlot = cell.tipped ? 'tip-placed' : '';
       const wild = cell.wild ? 'wild' : '';
       const disabled = cell.kind === 'filled' && rowIndex === game.playerRow ? '' : 'disabled';
       const label = cell.letter || '';
-      return `<button class="slot ${cls} ${pop} ${wild}" data-slot="${slotIndex}" ${disabled}>${label}</button>`;
+      return `<button class="slot ${cls} ${pop} ${tippedSlot} ${wild}" data-slot="${slotIndex}" ${disabled}>${label}</button>`;
     }).join('');
     const color = game.numberColors[rowIndex];
     const live = game.flash && rowIndex === game.timerRow ? 'live' : '';
     const player = rowIndex === game.playerRow ? 'is-player' : '';
-    const timer = rowIndex === game.timerRow ? 'is-timer' : '';
     const rejected = game.tone === 'bad' && rowIndex === game.playerRow ? 'is-bad' : '';
     const points = game.rowPoints[rowIndex] ? `${game.rowPoints[rowIndex]}` : '';
     const clock = game.rowClock(rowIndex);
+    const surprise = game.surprise?.row === rowIndex ? game.surprise.kind : '';
+    const surpriseClass = surprise === 'double' ? 'surprise-double' : surprise === 'long' ? 'surprise-long' : '';
+    const surpriseTag = surprise === 'double' ? 'x2' : surprise === 'long' ? '5+' : '';
     return `
-      <div class="row ${player} ${timer} ${rejected}" data-row="${rowIndex}">
+      <div class="row ${player} ${rejected} ${surpriseClass}" data-row="${rowIndex}">
         <div class="num ${color} ${live}">${rowIndex + 1}</div>
         <div class="slots">${slots}</div>
         <div class="row-side">
+          ${surpriseTag ? `<div class="surprise-tag">${surpriseTag}</div>` : ''}
           <div class="points">${points}</div>
           <div class="row-clock" data-row-clock>${clock}</div>
         </div>
@@ -444,12 +585,14 @@ function boardHtml(game) {
   }).join('');
 
   const tiles = game.source.map((tile, index) => `
-    <button class="tile ${tile.hidden ? 'used' : ''} ${tile.wild ? 'wild' : ''}" data-tile="${index}" ${tile.hidden ? 'disabled' : ''}>${tile.letter}</button>
+    <button class="tile ${tile.hidden ? 'used' : ''} ${tile.wild ? 'wild' : ''} ${!tile.hidden && game.tipped?.has(index) ? 'tipped' : ''}" data-tile="${index}" ${tile.hidden ? 'disabled' : ''}>${tile.letter}</button>
   `).join('');
 
   return `
     <section class="card board ${game.combo >= 2 ? 'combo-hot' : ''}">
+      ${raceHtml()}
       <div class="warning">${game.warning || ''}</div>
+      ${surpriseNote(game)}
       ${game.bonus ? `<div class="fx">${game.bonus}</div>` : ''}
       ${rows}
     </section>
@@ -457,9 +600,15 @@ function boardHtml(game) {
       <div>
         <div class="tiles">${tiles}</div>
         <p class="keys">Clic o teclado · Retroceso quita la última · Esc borra la fila · Espacio comprueba</p>
+        ${game.tipUsed ? '<p class="tip-note">El foco marcó las fichas de una palabra. Un tip por ronda.</p>' : ''}
       </div>
       <div class="actions">
-        ${game.over ? '<button class="primary" id="home-board">Página principal</button>' : `<button class="primary" id="submit" ${game.canSubmit() ? '' : 'disabled'}>TERMINAR PALABRA</button>`}
+        ${game.over ? '<button class="primary" id="home-board">Página principal</button>' : `
+          <div class="play-actions">
+            ${tipButton(game)}
+            <button class="primary" id="submit" ${game.canSubmit() ? '' : 'disabled'}>TERMINAR PALABRA</button>
+          </div>
+        `}
         <div class="stat"><span>Tiempo</span><strong data-clock>${game.secondsLeft}</strong></div>
       </div>
     </section>
@@ -605,19 +754,50 @@ async function refreshMatch() {
   if (!response.ok) return;
   const next = await response.json();
   const previous = state.match.phase;
+  const stamp = JSON.stringify(next);
+  const changed = stamp !== state.matchStamp;
   state.match = next;
+  state.matchStamp = stamp;
   if (previous === 'playing' && next.phase === 'review' && state.screen === 'play') {
     stopClocks();
     await postBoard(state, false);
     state.screen = 'match';
+    state.viewPodium = false;
     render();
     return;
   }
+  const me = next.players.find((player) => player.userId === state.user?.id);
+  const others = next.players.filter((player) => !player.left && player.userId !== state.user?.id);
+  if (me?.replay && others.length === 0 && (next.phase === 'review' || next.phase === 'podium' || state.viewPodium)) {
+    await fetch(`/api/matches/${next.id}/leave`, { method: 'POST' });
+    leaveMatch('Ningún jugador ha seleccionado volver a jugar.');
+    return;
+  }
   if (next.phase === 'playing' && state.screen === 'match' && previous !== 'playing') {
+    state.viewPodium = false;
     await beginCompeteRound();
     return;
   }
-  if (state.screen === 'match') render();
+  if (next.phase === 'lobby' && previous !== 'lobby' && state.screen === 'match') {
+    state.viewPodium = false;
+    state.game = null;
+    render();
+    return;
+  }
+  if (state.screen === 'match' && changed) render();
+  if (state.screen === 'play' && next.phase === 'playing') paintRace();
+}
+
+function leaveMatch(message) {
+  clearInterval(matchPoll);
+  state.match = null;
+  state.matchStamp = '';
+  state.viewPodium = false;
+  state.game = null;
+  state.screen = 'menu';
+  state.error = message || '';
+  history.replaceState(null, '', '/');
+  render();
 }
 
 async function beginCompeteRound() {
@@ -625,6 +805,8 @@ async function beginCompeteRound() {
   const mode = modeById(match.modeId);
   const dictionary = await loadDictionary(mode);
   state.game = new Game(dictionary, match.skillId, { seed: match.seed, compete: true, modeId: match.modeId });
+  state.marksLocked = false;
+  state.marksReport = null;
   state.game.start();
   state.screen = 'play';
   state.followedRow = null;
@@ -634,9 +816,8 @@ async function beginCompeteRound() {
 
 async function enterMatch(id) {
   if (!state.user) {
-    state.error = 'Entra con Google para unirte a la competencia';
     state.pendingMatch = id;
-    render();
+    window.location.href = `/api/auth/google?partida=${encodeURIComponent(id)}`;
     return;
   }
   const response = await fetch(`/api/matches/${id}/join`, { method: 'POST' });
@@ -647,6 +828,8 @@ async function enterMatch(id) {
     return;
   }
   state.match = data;
+  state.matchStamp = JSON.stringify(data);
+  state.viewPodium = false;
   state.screen = 'match';
   state.playMode = 'friends';
   watchMatch();
@@ -688,6 +871,7 @@ function menuHtml() {
             <p class="menu-label">Nivel</p>
             <div class="skills">${skills}</div>
             ${state.playMode === 'solo' ? `<button class="choice ${state.daily ? 'active' : ''}" id="daily">Desafío del día · ${today()}</button>` : ''}
+            ${streakHtml()}
             ${state.playMode === 'friends' ? friendsPanel() : ''}
             ${state.error ? `<p class="hint">${state.error}</p>` : ''}
             <div class="sheet-actions">
@@ -716,6 +900,7 @@ function splashHtml() {
 }
 
 function personalHtml(game) {
+  if (nearGap(game)) return '';
   const previous = visibleScores().filter((row) => row.id !== state.savedId);
   const best = previous.reduce((max, row) => Math.max(max, Number(row.points) || 0), 0);
   if (!best) {
@@ -725,6 +910,44 @@ function personalHtml(game) {
     return `<p class="challenge">¡Superaste tu récord! Antes tenías ${best} y ahora <strong>${game.pointsTotal}</strong>.</p>`;
   }
   return `<p class="challenge">Tu récord es ${best}. Esta partida: ${game.pointsTotal}. Te faltan ${best - game.pointsTotal} puntos para superarte.</p>`;
+}
+
+function nearGap(game) {
+  const gap = (state.targetPoints || 0) - game.pointsTotal;
+  return gap > 0 && gap <= 150 ? gap : 0;
+}
+
+function nearMissHtml(game) {
+  const gap = nearGap(game);
+  if (!gap) return '';
+  return `
+    <div class="near-miss">
+      <div>
+        <p>Te faltaron</p>
+        <strong>${gap}</strong>
+      </div>
+      <button class="primary" id="again" type="button">Jugar de nuevo</button>
+    </div>
+  `;
+}
+
+function marksHtml() {
+  const report = state.marksReport;
+  if (!report) return '';
+  const chip = (label, value, beaten) => `
+    <div class="mark ${beaten ? 'fresh' : ''}">
+      <span>${label}</span>
+      <strong>${escapeHtml(value)}</strong>
+      ${beaten ? '<em>Nuevo</em>' : ''}
+    </div>
+  `;
+  return `
+    <div class="marks">
+      ${chip('Mejor combo', report.current.combo || 0, report.beaten.combo)}
+      ${chip('Palabra más larga', report.current.word || '—', report.beaten.word)}
+      ${chip('ZAP en la partida', report.current.zaps || 0, report.beaten.zaps)}
+    </div>
+  `;
 }
 
 function reviewHtml(game) {
@@ -738,7 +961,9 @@ function reviewHtml(game) {
         <p class="eyebrow">Fin del juego</p>
         <h2>Tu puntuación</h2>
         ${saveFormHtml(game)}
+        ${nearMissHtml(game)}
         ${personalHtml(game)}
+        ${marksHtml()}
         <h3 class="board-title">${scoreTitle()}</h3>
         ${scoresHtml()}
         <h2>Expande tu vocabulario</h2>
@@ -749,7 +974,7 @@ function reviewHtml(game) {
           <pre>${escapeHtml(meaning)}</pre>
         </div>
         <div class="sheet-actions">
-          <button class="ghost" id="again">Jugar de nuevo</button>
+          ${nearGap(game) ? '' : '<button class="ghost" id="again" type="button">Jugar de nuevo</button>'}
           <button class="primary" id="home">Página principal</button>
         </div>
       </div>
@@ -765,7 +990,55 @@ function followRow() {
   row?.scrollIntoView({ behavior: 'smooth', block: 'start', inline: 'nearest' });
 }
 
+function captureGlide() {
+  if (state.screen !== 'play') return null;
+  const row = app.querySelector('.row.is-player');
+  if (!row) return null;
+  return {
+    row: Number(row.dataset.row),
+    top: row.offsetTop,
+    left: row.offsetLeft,
+    width: row.offsetWidth,
+    height: row.offsetHeight,
+  };
+}
+
+function slideHighlight(from) {
+  if (state.screen !== 'play' || !state.game) return;
+  const board = app.querySelector('.board');
+  const row = board?.querySelector('.row.is-player');
+  if (!board || !row) return;
+  const ring = document.createElement('div');
+  ring.className = 'glide-ring';
+  board.appendChild(ring);
+  const to = {
+    top: row.offsetTop,
+    left: row.offsetLeft,
+    width: row.offsetWidth,
+    height: row.offsetHeight,
+  };
+  const moved = from && from.row !== state.game.playerRow;
+  const start = moved ? from : to;
+  ring.style.transition = 'none';
+  ring.style.transform = `translate(${start.left}px, ${start.top}px)`;
+  ring.style.width = `${start.width}px`;
+  ring.style.height = `${start.height}px`;
+  if (!moved) return;
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      ring.style.transition = 'transform 560ms cubic-bezier(.22, .8, .28, 1), height 560ms cubic-bezier(.22, .8, .28, 1), width 560ms cubic-bezier(.22, .8, .28, 1)';
+      ring.style.transform = `translate(${to.left}px, ${to.top}px)`;
+      ring.style.width = `${to.width}px`;
+      ring.style.height = `${to.height}px`;
+    });
+  });
+}
+
 function render() {
+  const glideFrom = captureGlide();
+  const overlay = app.querySelector('.overlay');
+  const keepOverlay = overlay ? overlay.scrollTop : 0;
+  const keepWindow = window.scrollY;
   const game = state.game;
   const skill = game ? game.skill : skillById(state.skillId);
   const mode = modeById(state.modeId);
@@ -818,6 +1091,10 @@ function render() {
   `;
   bind();
   followRow();
+  slideHighlight(glideFrom);
+  const nextOverlay = app.querySelector('.overlay');
+  if (nextOverlay && keepOverlay) nextOverlay.scrollTop = keepOverlay;
+  if (keepWindow) window.scrollTo(0, keepWindow);
 }
 
 function bind() {
@@ -871,6 +1148,8 @@ function bind() {
         return;
       }
       state.match = data;
+      state.matchStamp = JSON.stringify(data);
+      state.viewPodium = false;
       state.screen = 'match';
       history.replaceState(null, '', `/?partida=${data.id}`);
       watchMatch();
@@ -919,33 +1198,51 @@ function bind() {
   const matchReady = app.querySelector('#match-ready');
   if (matchReady) {
     matchReady.onclick = async () => {
+      if (state.match.phase === 'review' && state.match.round >= state.match.rounds) {
+        state.viewPodium = true;
+        render();
+        return;
+      }
       const response = await fetch(`/api/matches/${state.match.id}/ready`, { method: 'POST' });
       state.match = await response.json();
+      state.matchStamp = JSON.stringify(state.match);
       if (state.match.phase === 'playing') await beginCompeteRound();
       else render();
+    };
+  }
+  const matchReplay = app.querySelector('#match-replay');
+  if (matchReplay) {
+    matchReplay.onclick = async () => {
+      const response = await fetch(`/api/matches/${state.match.id}/replay`, { method: 'POST' });
+      const data = await response.json();
+      if (!response.ok) {
+        state.error = data.error || 'No se pudo volver a jugar';
+        render();
+        return;
+      }
+      if (data.replayEmpty) {
+        await fetch(`/api/matches/${state.match.id}/leave`, { method: 'POST' });
+        leaveMatch('Ningún jugador ha seleccionado volver a jugar.');
+        return;
+      }
+      state.match = data;
+      state.matchStamp = JSON.stringify(data);
+      if (data.phase === 'lobby') state.viewPodium = false;
+      render();
     };
   }
   const matchLeave = app.querySelector('#match-leave');
   if (matchLeave) {
     matchLeave.onclick = async () => {
       await fetch(`/api/matches/${state.match.id}/leave`, { method: 'POST' });
-      clearInterval(matchPoll);
-      state.match = null;
-      state.game = null;
-      state.screen = 'menu';
-      history.replaceState(null, '', '/');
-      render();
+      leaveMatch('');
     };
   }
   const matchHome = app.querySelector('#match-home');
   if (matchHome) {
-    matchHome.onclick = () => {
-      clearInterval(matchPoll);
-      state.match = null;
-      state.game = null;
-      state.screen = 'menu';
-      history.replaceState(null, '', '/');
-      render();
+    matchHome.onclick = async () => {
+      if (state.match?.id) await fetch(`/api/matches/${state.match.id}/leave`, { method: 'POST' });
+      leaveMatch('');
     };
   }
   const copyLink = app.querySelector('#copy-link');
@@ -1000,6 +1297,18 @@ function bind() {
   });
   const submit = app.querySelector('#submit');
   if (submit) submit.onclick = onSubmit;
+  const tip = app.querySelector('#tip');
+  if (tip) {
+    tip.onclick = () => {
+      if (!state.game || animating) return;
+      const ok = state.game.useTip();
+      if (ok) {
+        state.popSlot = state.game.tipSlot;
+        sounds.tap();
+      }
+      render();
+    };
+  }
 
   app.querySelectorAll('[data-review]').forEach((button) => {
     button.onclick = () => {
@@ -1015,7 +1324,12 @@ function bind() {
     render();
   };
   const again = app.querySelector('#again');
-  if (again) again.onclick = goHome;
+  if (again) {
+    again.onclick = () => {
+      stopClocks();
+      beginMatch();
+    };
+  }
   app.querySelectorAll('#home, #home-board').forEach((button) => {
     button.onclick = goHome;
   });
@@ -1059,7 +1373,7 @@ Promise.all([
     state.error = 'Google no dejó entrar. Tu correo tiene que estar en los usuarios de prueba.';
   }
   const partida = new URLSearchParams(window.location.search).get('partida') || state.pendingMatch;
-  if (partida && state.user) enterMatch(partida);
+  if (partida) enterMatch(partida);
   else render();
 });
 

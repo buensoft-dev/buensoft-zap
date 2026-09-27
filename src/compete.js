@@ -11,8 +11,8 @@ export function matchLink(id) {
 export function matchHtml(state) {
   const match = state.match;
   if (!match) return '';
-  if (match.phase === 'podium') return podiumHtml(match);
-  if (match.phase === 'review') return reviewHtml(match);
+  if (match.phase === 'podium' || state.viewPodium) return podiumHtml(match);
+  if (match.phase === 'review') return reviewHtml(match, state);
   return lobbyHtml(state, match);
 }
 
@@ -60,16 +60,16 @@ function lobbyHtml(state, match) {
           </div>
         ` : ''}
         <div class="sheet-actions">
-          <button class="primary" id="match-ready" type="button" ${me?.ready ? 'disabled' : ''}>INICIAR JUEGO</button>
+          <button class="primary" id="match-ready" type="button" ${me?.ready ? 'disabled' : ''}>INICIAR PARTIDA</button>
           <button class="ghost" id="match-leave" type="button">Salir</button>
         </div>
-        <p class="hint">El juego empieza cuando todos los que están en la sala pulsan Iniciar. Si falta un invitado, el anfitrión puede quitar esa invitación.</p>
+        <p class="hint">El juego empieza cuando todos los que están en la sala pulsan Iniciar partida. Si falta un invitado, el anfitrión puede quitar esa invitación.</p>
       </div>
     </div>
   `;
 }
 
-function reviewHtml(match) {
+function reviewHtml(match, state) {
   const boards = match.players.filter((player) => !player.left || player.board).map((player) => `
     <article class="mini">
       <header><strong>${escapeHtml(player.name)}</strong><span>${player.roundScore || 0} pts</span></header>
@@ -88,11 +88,17 @@ function reviewHtml(match) {
         <ol class="tops">
           ${ranked.map((player, index) => `<li><span>${index + 1}</span><span>${escapeHtml(player.name)}</span><strong>${(player.total || 0) + (player.roundScore || 0)}</strong><em>esta ronda ${player.roundScore || 0}</em></li>`).join('')}
         </ol>
+        ${freshMarksHtml(state)}
         <div class="sheet-actions">
-          <button class="primary" id="match-ready" type="button">${match.round >= match.rounds ? 'VER PODIO' : 'SIGUIENTE RONDA'}</button>
+          ${match.round >= match.rounds ? `
+            <button class="primary" id="match-ready" type="button">VER PODIO</button>
+            ${replayControls(match)}
+          ` : `
+            <button class="primary" id="match-ready" type="button">SIGUIENTE RONDA</button>
+          `}
           <button class="ghost" id="match-leave" type="button">Salir</button>
         </div>
-        <p class="hint">${match.round >= match.rounds ? 'La partida terminó. Todos deben pulsar Ver podio.' : 'Las palabras repetidas entre jugadores se tachan y no suman. Todos los que siguen deben pulsar Siguiente ronda.'}</p>
+        <p class="hint">${match.round >= match.rounds ? 'Puedes ver el podio sin esperar a los demás. Volver a jugar empieza cuando todos los que siguen en la partida lo pulsan.' : 'Las palabras repetidas entre jugadores se tachan y no suman. Todos los que siguen deben pulsar Siguiente ronda.'}</p>
       </div>
     </div>
   `;
@@ -104,9 +110,46 @@ function medal(place) {
   return `<svg class="medal" viewBox="0 0 80 100" aria-hidden="true"><path d="M24 4h10l6 18 6-18h10l-14 36h-4z" fill="${ribbon}"/><circle cx="40" cy="58" r="24" fill="${face}" stroke="#3a2508" stroke-width="3"/><text x="40" y="66" text-anchor="middle" font-size="22" font-family="Georgia, serif" fill="#3a2508">${place}</text></svg>`;
 }
 
+function shownTotal(match, player) {
+  if (match.phase === 'podium') return player.total || 0;
+  return (player.total || 0) + (player.roundScore || 0);
+}
+
+function replayControls(match) {
+  const me = match.players.find((player) => player.userId === match.you);
+  return `
+    <button class="ghost" id="match-replay" type="button" ${me?.replay ? 'disabled' : ''}>VOLVER A JUGAR</button>
+    ${me?.replay ? '<p class="hint">Esperando a que los demás pulsen Volver a jugar.</p>' : ''}
+  `;
+}
+
+function freshMarksHtml(state) {
+  const report = state?.marksReport;
+  if (!report) return '';
+  const bits = [];
+  if (report.beaten.combo) bits.push(`combo x${report.current.combo}`);
+  if (report.beaten.word) bits.push(report.current.word);
+  if (report.beaten.zaps) bits.push(`${report.current.zaps} ZAP`);
+  if (!bits.length) return '';
+  return `<p class="marks-fresh">Nuevo récord: ${bits.map((item) => escapeHtml(item)).join(' · ')}</p>`;
+}
+
+function nearPodium(match) {
+  const me = match.players.find((player) => player.userId === match.you);
+  if (!me) return 0;
+  const ranked = [...match.players].filter((player) => !player.left)
+    .sort((a, b) => shownTotal(match, b) - shownTotal(match, a) || a.name.localeCompare(b.name));
+  const first = ranked[0];
+  if (!first || first.userId === me.userId) return 0;
+  const gap = shownTotal(match, first) - shownTotal(match, me);
+  return gap > 0 && gap <= 150 ? gap : 0;
+}
+
 function podiumHtml(match) {
-  const top = [...match.players].sort((a, b) => b.total - a.total || a.name.localeCompare(b.name)).slice(0, 3);
+  const ranked = [...match.players].sort((a, b) => shownTotal(match, b) - shownTotal(match, a) || a.name.localeCompare(b.name));
+  const top = ranked.slice(0, 3);
   const order = [top[1], top[0], top[2]].filter(Boolean);
+  const gap = nearPodium(match);
   return `
     <div class="overlay">
       <div class="sheet match-sheet podium-sheet">
@@ -116,10 +159,14 @@ function podiumHtml(match) {
           ${order.map((player) => {
             const place = top.indexOf(player) + 1;
             const label = place === 1 ? '1er lugar' : place === 2 ? '2do lugar' : '3er lugar';
-            return `<div class="podium-place place-${place}">${medal(place)}<strong>${label}</strong><span>${escapeHtml(player.name)}</span><em>${player.total}</em></div>`;
+            return `<div class="podium-place place-${place}">${medal(place)}<strong>${label}</strong><span>${escapeHtml(player.name)}</span><em>${shownTotal(match, player)}</em></div>`;
           }).join('')}
         </div>
-        <button class="primary" id="match-home" type="button">Página principal</button>
+        ${gap ? `<div class="near-miss"><div><p>Te faltaron</p><strong>${gap}</strong></div>${replayControls(match)}</div>` : ''}
+        <div class="sheet-actions">
+          ${gap ? '' : replayControls(match)}
+          <button class="primary" id="match-home" type="button">Página principal</button>
+        </div>
       </div>
     </div>
   `;

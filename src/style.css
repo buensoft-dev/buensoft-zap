@@ -555,6 +555,7 @@ h1 { font-size: 40px; line-height: 0.95; }
 }
 
 .tip-btn {
+  position: relative;
   width: 46px;
   height: 46px;
   flex: 0 0 46px;
@@ -565,6 +566,22 @@ h1 { font-size: 40px; line-height: 0.95; }
   display: grid;
   place-items: center;
   padding: 0;
+  overflow: visible;
+}
+.tip-count {
+  position: absolute;
+  right: -6px;
+  bottom: -2px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: var(--gold);
+  color: var(--on-gold);
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 16px;
+  text-align: center;
 }
 .tip-btn svg { width: 28px; height: 28px; }
 .tip-btn.spent, .tip-btn:disabled { opacity: 0.4; }
@@ -1347,8 +1364,15 @@ body:has(.app.is-board) {
   .app.is-board .tray-row { display: contents; }
   .app.is-board .tip-btn { grid-area: tip; width: 40px; height: 40px; align-self: center; }
   .app.is-board .tip-btn svg { width: 22px; height: 22px; }
-  .app.is-board .tiles { grid-area: letters; width: 100%; gap: 5px; grid-template-columns: repeat(6, minmax(0, 1fr)); }
-  .app.is-board .tile { width: 100%; height: 40px; font-size: 18px; box-shadow: 0 3px 0 var(--tile-edge); }
+  .slot { height: min(100%, calc((100cqi - 6 * var(--slot-gap)) / 7)); font-size: clamp(16px, 4.8vw, 22px); }
+  .app.is-board .tiles { grid-area: letters; width: 100%; gap: 6px; grid-template-columns: repeat(6, minmax(0, 1fr)); }
+  .app.is-board .tile {
+    width: 100%;
+    height: auto;
+    aspect-ratio: 1;
+    font-size: 22px;
+    box-shadow: 0 4px 0 var(--tile-edge);
+  }
   .app.is-board .submit-word {
     grid-area: submit;
     margin: 0;

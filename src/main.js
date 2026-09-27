@@ -394,6 +394,18 @@ function onKey(event) {
     if (state.game.canSubmit()) onSubmit();
     return;
   }
+  if (key === 'Enter') {
+    if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement) return;
+    event.preventDefault();
+    const index = state.game.source.findIndex((tile) => !tile.hidden && tile.wild);
+    if (index >= 0) {
+      state.game.place(index);
+      state.popSlot = state.game.filledCount() - 1;
+      sounds.tap();
+      render();
+    }
+    return;
+  }
   if (/^[a-zA-ZñÑ]$/.test(key)) {
     const letter = key.toUpperCase();
     const index = state.game.source.findIndex((tile) => !tile.hidden && tile.letter === letter);
@@ -540,13 +552,15 @@ function surpriseNote(game) {
 }
 
 function tipButton(game) {
-  const spent = game.tipUsed || !game.playing || game.over;
+  const left = game.tipsLeft ?? 0;
+  const spent = left <= 0 || !game.playing || game.over;
   return `
-    <button class="tip-btn ${game.tipUsed ? 'spent' : ''}" id="tip" type="button" ${spent ? 'disabled' : ''} aria-label="Tip" title="Un tip por ronda">
+    <button class="tip-btn ${left <= 0 ? 'spent' : ''}" id="tip" type="button" ${spent ? 'disabled' : ''} aria-label="Tip, ${left} disponibles" title="Tres tips por ronda">
       <svg viewBox="0 0 24 24" aria-hidden="true">
         <path d="M9 18h6M10 21h4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
         <path d="M12 3a6 6 0 0 0-3.2 11.1c.5.4.8 1 .8 1.6V17h4.8v-1.3c0-.6.3-1.2.8-1.6A6 6 0 0 0 12 3z" fill="currentColor" fill-opacity=".18" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>
       </svg>
+      <span class="tip-count">${left}</span>
     </button>
   `;
 }
@@ -603,8 +617,8 @@ function boardHtml(game) {
             ${tipButton(game)}
             <div class="tiles">${tiles}</div>
           </div>
-          <p class="keys">Clic o teclado · Retroceso quita la última · Esc borra la fila · Espacio comprueba</p>
-          ${game.tipUsed ? '<p class="tip-note">El foco marcó las fichas de una palabra. Un tip por ronda.</p>' : ''}
+          <p class="keys">Clic o teclado · Retroceso quita la última · Esc borra la fila · Espacio comprueba · Enter coloca el comodín</p>
+          ${game.tipped?.size ? '<p class="tip-note">El foco marcó las fichas de una palabra.</p>' : ''}
         </div>
         ${game.over
           ? '<button class="submit-word" id="home-board" type="button">Página principal</button>'

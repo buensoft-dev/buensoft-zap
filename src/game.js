@@ -90,7 +90,7 @@ export class Game {
     this.struck = false;
     this.deal();
     this.surprise = pickSurprise(this.surpriseKey, this.level);
-    this.tipUsed = false;
+    this.tipsLeft = 3;
     this.tipped = new Set();
     this.tipSlot = -1;
   }
@@ -304,8 +304,9 @@ export class Game {
     this.comboTimerRow = -1;
     this.bonus = '';
     this.surprise = pickSurprise(this.surpriseKey, this.level);
-    this.tipUsed = false;
+    this.tipsLeft = 3;
     this.tipped = new Set();
+    this.tipIndexes = null;
     this.tipSlot = -1;
     return {
       level: this.level,
@@ -376,6 +377,7 @@ export class Game {
   deal() {
     this.source = Array.from({ length: TILES }, () => ({ letter: '', hidden: false, wild: false, fromSeed: false }));
     this.tipped = new Set();
+    this.tipIndexes = null;
     this.tipSlot = -1;
 
     let seed = '';
@@ -423,19 +425,39 @@ export class Game {
   }
 
   useTip() {
-    if (this.tipUsed || !this.playing || this.over) return false;
-    const indexes = this.hintTiles();
+    if (this.tipsLeft <= 0 || !this.playing || this.over) return false;
+    const indexes = this.tipWord();
     if (!indexes.length) {
       this.warning = 'Con estas fichas no hay una palabra para revelar';
       return false;
     }
-    this.tipUsed = true;
+    const step = 4 - this.tipsLeft;
+    this.tipsLeft -= 1;
     this.tipped = new Set(indexes);
     this.warning = '';
+    this.tipSlot = -1;
+    if (step === 1) return true;
+    const count = step === 2 ? 1 : Math.ceil(indexes.length / 2);
     const before = this.filledCount();
-    this.place(indexes[0]);
+    for (let index = 0; index < count; index += 1) {
+      if (!this.source[indexes[index]]?.hidden) this.place(indexes[index]);
+    }
     if (this.filledCount() > before) this.tipSlot = this.filledCount() - 1;
     return true;
+  }
+
+  tipWord() {
+    const row = this.grid[this.playerRow];
+    const same = this.tipIndexes?.length && this.tipIndexes.every((index) => {
+      const tile = this.source[index];
+      if (!tile?.letter) return false;
+      if (!tile.hidden) return true;
+      return row.some((cell) => cell.kind === 'filled' && cell.source === index);
+    });
+    if (same) return this.tipIndexes;
+    const indexes = this.hintTiles();
+    this.tipIndexes = indexes;
+    return indexes;
   }
 
   hintTiles() {

@@ -594,22 +594,22 @@ function boardHtml(game) {
       <div class="warning">${game.warning || ''}</div>
       ${surpriseNote(game)}
       ${game.bonus ? `<div class="fx">${game.bonus}</div>` : ''}
-      ${rows}
+      <div class="rows">${rows}</div>
     </section>
     <section class="card tray">
-      <div>
-        <div class="tiles">${tiles}</div>
-        <p class="keys">Clic o teclado · Retroceso quita la última · Esc borra la fila · Espacio comprueba</p>
-        ${game.tipUsed ? '<p class="tip-note">El foco marcó las fichas de una palabra. Un tip por ronda.</p>' : ''}
-      </div>
-      <div class="actions">
-        ${game.over ? '<button class="primary" id="home-board">Página principal</button>' : `
-          <div class="play-actions">
+      <div class="tray-main">
+        <div class="tray-letters">
+          <div class="tray-row">
             ${tipButton(game)}
-            <button class="primary" id="submit" ${game.canSubmit() ? '' : 'disabled'}>TERMINAR PALABRA</button>
+            <div class="tiles">${tiles}</div>
           </div>
-        `}
-        <div class="stat"><span>Tiempo</span><strong data-clock>${game.secondsLeft}</strong></div>
+          <p class="keys">Clic o teclado · Retroceso quita la última · Esc borra la fila · Espacio comprueba</p>
+          ${game.tipUsed ? '<p class="tip-note">El foco marcó las fichas de una palabra. Un tip por ronda.</p>' : ''}
+        </div>
+        ${game.over
+          ? '<button class="submit-word" id="home-board" type="button">Página principal</button>'
+          : `<button class="submit-word" id="submit" type="button" ${game.canSubmit() ? '' : 'disabled'}>TERMINAR PALABRA</button>`}
+        <div class="time-box"><span>Tiempo</span><strong data-clock>${game.secondsLeft}</strong></div>
       </div>
     </section>
   `;
@@ -1042,8 +1042,9 @@ function render() {
   const game = state.game;
   const skill = game ? game.skill : skillById(state.skillId);
   const mode = modeById(state.modeId);
+  const boardOn = Boolean(game && state.screen !== 'menu');
   app.innerHTML = `
-    <div class="app">
+    <div class="app${boardOn ? ' is-board' : ''}">
       <header class="topbar">
         <div class="brand">
           <img class="brand-mark" src="/favicon.png" alt="" />
@@ -1072,7 +1073,7 @@ function render() {
               </div>
             ` : ''}
           </div>
-          <div>${boardHtml(game)}</div>
+          <div class="play-main">${boardHtml(game)}</div>
         </div>
       ` : ''}
     </div>

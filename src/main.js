@@ -2,7 +2,7 @@ import './style.css';
 import { Game, MODES, SKILLS } from './game.js';
 import { historyHtml, matchHtml, postBoard } from './compete.js';
 
-const VERSION = '1.4.0';
+const VERSION = '1.4.1';
 const app = document.querySelector('#app');
 const cache = new Map();
 
@@ -1141,6 +1141,9 @@ function rulesHtml() {
         <p class="eyebrow">Cómo se cuentan los puntos</p>
         <h2 id="rules-title">Instrucciones</h2>
         <p class="hint">Cada palabra válida suma en el momento en que se acepta. El número verde de la fila es el puntaje de esa palabra. Puntos es la suma de todas.</p>
+        <h3>Modo traducción</h3>
+        <p class="hint">Si lo activas en el menú, durante la partida aparece una tarjeta con hasta 3 traducciones. Cada una es de una palabra distinta del diccionario que puedes formar con las letras que tienes en ese momento. La tarjeta no muestra la palabra, solo su traducción. Tú escribes la palabra en el idioma del tablero.</p>
+        <p class="hint">En Español → Inglés esas traducciones están en inglés. En Inglés → Español están en español. Si ya usaste una palabra en la partida, su traducción deja de aparecer.</p>
         <p class="rules-formula">puntos = nivel × letras × 10 × combo</p>
         <p class="hint">Después se aplican el ZAP y la fila sorpresa.</p>
         <h3>Nivel</h3>

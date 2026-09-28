@@ -1181,12 +1181,15 @@ a.google {
 
 body:has(.app.is-board) {
   height: 100dvh;
+  height: 100svh;
   overflow: hidden;
 }
 
 .app.is-board {
   height: 100dvh;
+  height: 100svh;
   max-height: 100dvh;
+  max-height: 100svh;
   min-height: 0;
   display: flex;
   flex-direction: column;
@@ -1303,9 +1306,9 @@ body:has(.app.is-board) {
   .app.is-board .brand-mark { width: 32px; height: 32px; }
   .app.is-board .stats { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; }
   .app.is-board .stats .stat:nth-child(2) { display: none; }
-  .app.is-board .stat { padding: 4px; border-radius: 12px; }
-  .app.is-board .stat span { font-size: 9px; letter-spacing: 0.04em; }
-  .app.is-board .stat strong { font-size: 14px; }
+  .app.is-board .stat { padding: 5px 4px 3px; border-radius: 14px; }
+  .app.is-board .stat span { font-size: 8px; letter-spacing: 0.08em; }
+  .app.is-board .stat strong { font-size: 18px; line-height: 1; }
 
   .app.is-board .side-col {
     display: grid;
@@ -1320,7 +1323,7 @@ body:has(.app.is-board) {
     max-height: none;
   }
 
-  .app.is-board .meaning .word { font-size: 18px; }
+  .app.is-board .meaning .word { font-size: 28px; line-height: 0.95; letter-spacing: 0.03em; }
   .app.is-board .meaning pre,
   .app.is-board .meaning .hint {
     margin: 2px 0 0;
@@ -1333,16 +1336,38 @@ body:has(.app.is-board) {
   }
 
   .app.is-board .target-bar {
-    padding: 6px 10px;
+    align-items: center;
+    text-align: center;
+    padding: 8px 12px;
     border-radius: 14px;
     justify-content: center;
-    min-width: 92px;
+    min-width: 108px;
   }
 
-  .app.is-board .target-bar strong { font-size: 18px; }
+  .app.is-board .target-bar span { font-size: 10px; letter-spacing: 0.06em; }
+  .app.is-board .target-bar strong { font-size: 26px; line-height: 1; }
+  .app.is-board .target-bar em { font-size: 13px; }
   .app.is-board .play-main { gap: 6px; }
   .app.is-board .board { padding: 6px; border-radius: 16px; }
   .app.is-board .rows { gap: 3px; }
+  .app.is-board .row.surprise-double,
+  .app.is-board .row.surprise-long { box-shadow: none; }
+  .app.is-board .row.surprise-double .num,
+  .app.is-board .row.surprise-long .num { position: relative; }
+  .app.is-board .row.surprise-double .num::before,
+  .app.is-board .row.surprise-long .num::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 50%;
+    width: 14px;
+    height: 14px;
+    transform: translate(-72%, -50%);
+    border-radius: 50%;
+    background: radial-gradient(circle at 11px 7px, transparent 5px, var(--gold-2) 5.5px);
+    pointer-events: none;
+  }
+  .app.is-board .surprise-tag { font-size: 12px; }
 
   .app.is-board .tray {
     padding: 8px;
@@ -1350,12 +1375,28 @@ body:has(.app.is-board) {
     position: static;
   }
 
+  .app.is-board .slots {
+    container-type: size;
+    justify-items: center;
+    align-items: center;
+  }
+
+  .app.is-board .slot {
+    width: min(100%, 100cqh);
+    height: auto;
+    aspect-ratio: 1;
+    align-self: center;
+    justify-self: center;
+    border-radius: 10px;
+    font-size: clamp(15px, 4.6vw, 20px);
+  }
+
   .app.is-board .tray-main {
     display: grid;
     grid-template-columns: auto minmax(0, 1fr);
     grid-template-areas:
       "tip letters"
-      "submit time";
+      "time submit";
     gap: 8px 10px;
     align-items: center;
   }
@@ -1364,24 +1405,50 @@ body:has(.app.is-board) {
   .app.is-board .tray-row { display: contents; }
   .app.is-board .tip-btn { grid-area: tip; width: 40px; height: 40px; align-self: center; }
   .app.is-board .tip-btn svg { width: 22px; height: 22px; }
-  .slot { height: min(100%, calc((100cqi - 6 * var(--slot-gap)) / 7)); font-size: clamp(16px, 4.8vw, 22px); }
-  .app.is-board .tiles { grid-area: letters; width: 100%; gap: 6px; grid-template-columns: repeat(6, minmax(0, 1fr)); }
+  .app.is-board .tiles {
+    grid-area: letters;
+    width: 100%;
+    gap: 6px;
+    justify-content: center;
+    grid-template-columns: repeat(6, minmax(0, 46px));
+  }
   .app.is-board .tile {
     width: 100%;
     height: auto;
     aspect-ratio: 1;
-    font-size: 22px;
+    justify-self: center;
+    border-radius: 16px;
+    font-size: 20px;
     box-shadow: 0 4px 0 var(--tile-edge);
   }
+  .app.is-board .time-box {
+    grid-area: time;
+    width: max-content;
+    min-width: 64px;
+    justify-self: start;
+    padding: 4px 10px 2px;
+  }
+  .app.is-board .time-box span { font-size: 9px; letter-spacing: 0.12em; }
+  .app.is-board .time-box strong { font-size: 22px; }
   .app.is-board .submit-word {
     grid-area: submit;
     margin: 0;
-    min-width: 0;
-    width: 100%;
-    padding: 12px 8px;
+    width: max-content;
+    max-width: 100%;
+    justify-self: center;
+    padding: 12px 22px;
     font-size: 12px;
+    letter-spacing: 0.06em;
   }
-  .app.is-board .time-box { grid-area: time; min-width: 0; padding: 4px 8px 2px; }
-  .app.is-board .time-box span { font-size: 10px; letter-spacing: 0.12em; }
-  .app.is-board .time-box strong { font-size: 28px; }
+}
+
+@media (max-width: 760px) and (max-height: 680px) {
+  .app.is-board .tiles { grid-template-columns: repeat(6, minmax(0, 38px)); gap: 5px; }
+  .app.is-board .tile { font-size: 17px; border-radius: 14px; }
+  .app.is-board .tip-btn { width: 34px; height: 34px; }
+  .app.is-board .meaning .word,
+  .app.is-board .target-bar strong { font-size: 22px; }
+  .app.is-board .time-box strong { font-size: 20px; }
+  .app.is-board .submit-word { padding: 9px 16px; font-size: 11px; }
+  .app.is-board .tray { padding: 6px; }
 }

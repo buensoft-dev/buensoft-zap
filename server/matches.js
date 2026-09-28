@@ -230,6 +230,20 @@ async function load(id) {
   return (await matches.all()).find((match) => match.id === id) || null;
 }
 
+let matchQueue = Promise.resolve();
+
+function updateMatch(id, mutate) {
+  const run = matchQueue.then(async () => {
+    const match = await load(id);
+    if (!match) return null;
+    await mutate(match);
+    await save(match);
+    return match;
+  });
+  matchQueue = run.then(() => undefined, () => undefined);
+  return run;
+}
+
 async function save(match) {
   const matches = await store();
   const lastRound = match.phase === 'podium' || (match.phase === 'review' && match.round >= match.rounds);
@@ -563,24 +577,27 @@ export function matchRoutes(app) {
   app.post('/api/matches/:id/board', async (req, res) => {
     try {
       const user = requireUser(req);
-      const match = await load(req.params.id);
-      if (!match) fail('La partida no existe', 404);
-      const player = match.players.find((item) => item.userId === user.id && !item.left);
-      if (!player) fail('No estás en esta partida', 403);
-      if (match.phase === 'playing' || match.phase === 'review') {
-        const dict = await dictionary(match.modeId);
-        player.board = cleanBoard(req.body, dict, match.skillId);
-        if (req.body?.finish && match.phase === 'playing' && !match.finisher) {
-          match.finisher = { userId: user.id, name: user.name };
-          match.phase = 'review';
+      const existing = await load(req.params.id);
+      if (!existing) fail('La partida no existe', 404);
+      const dict = await dictionary(existing.modeId);
+      const match = await updateMatch(req.params.id, (current) => {
+        const player = current.players.find((item) => item.userId === user.id && !item.left);
+        if (!player) fail('No estás en esta partida', 403);
+        if (current.phase !== 'playing' && current.phase !== 'review') return;
+        const nextBoard = cleanBoard(req.body, dict, current.skillId);
+        const previous = player.board?.words?.length || 0;
+        if (nextBoard.words.length >= previous) player.board = nextBoard;
+        if (req.body?.finish && current.phase === 'playing' && !current.finisher) {
+          current.finisher = { userId: user.id, name: user.name };
+          current.phase = 'review';
           player.finished = true;
-          scoreRound(match);
-        } else if (match.phase === 'review') {
+          scoreRound(current);
+        } else if (current.phase === 'review') {
           player.finished = true;
-          scoreRound(match);
+          scoreRound(current);
         }
-      }
-      await save(match);
+      });
+      if (!match) fail('La partida no existe', 404);
       res.json(publicMatch(match, user.id));
     } catch (error) {
       res.status(error.status || 500).json({ error: error.message || 'No se pudo guardar el tablero' });

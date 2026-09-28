@@ -762,6 +762,16 @@ function watchMatch() {
   matchPoll = setInterval(() => { refreshMatch(); }, 1200);
 }
 
+async function republishBoard() {
+  if (!state.match || state.match.phase !== 'review' || !state.game || !state.user) return;
+  const mine = state.match.players.find((player) => player.userId === state.user.id);
+  const local = state.game.snapshot();
+  if (!local.words.length || local.words.length <= (mine?.board?.words || []).length) return;
+  if ((state.boardRepublish || 0) >= 3) return;
+  state.boardRepublish = (state.boardRepublish || 0) + 1;
+  await postBoard(state, false);
+}
+
 async function refreshMatch() {
   if (!state.match?.id || state.screen === 'play' && document.hidden) return;
   const response = await fetch(`/api/matches/${state.match.id}`);
@@ -772,6 +782,7 @@ async function refreshMatch() {
   const changed = stamp !== state.matchStamp;
   state.match = next;
   state.matchStamp = stamp;
+  if (next.phase === 'review') await republishBoard();
   if (previous === 'playing' && next.phase === 'review' && state.screen === 'play') {
     stopClocks();
     await postBoard(state, false);
@@ -824,6 +835,7 @@ async function beginCompeteRound() {
   state.game.start();
   state.screen = 'play';
   state.followedRow = null;
+  state.boardRepublish = 0;
   startClocks();
   render();
 }

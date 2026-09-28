@@ -69,8 +69,23 @@ function lobbyHtml(state, match) {
   `;
 }
 
+function withLocalWords(match, state) {
+  return match.players.map((player) => {
+    if (player.userId !== match.you || !state.game) return player;
+    const local = state.game.snapshot();
+    if (local.words.length <= (player.board?.words || []).length) return player;
+    const words = local.words.map((item) => ({ word: item.word, points: item.points, struck: false }));
+    return {
+      ...player,
+      roundScore: words.reduce((sum, item) => sum + item.points, 0),
+      board: { ...(player.board || {}), words, grid: local.grid },
+    };
+  });
+}
+
 function reviewHtml(match, state) {
-  const boards = match.players.filter((player) => !player.left || player.board).map((player) => `
+  const players = withLocalWords(match, state);
+  const boards = players.filter((player) => !player.left || player.board).map((player) => `
     <article class="mini">
       <header><strong>${escapeHtml(player.name)}</strong><span>${player.roundScore || 0} pts</span></header>
       <ol>
@@ -78,7 +93,7 @@ function reviewHtml(match, state) {
       </ol>
     </article>
   `).join('');
-  const ranked = [...match.players].filter((player) => !player.left).sort((a, b) => b.total + b.roundScore - (a.total + a.roundScore));
+  const ranked = players.filter((player) => !player.left).sort((a, b) => b.total + b.roundScore - (a.total + a.roundScore));
   return `
     <div class="overlay">
       <div class="sheet match-sheet">
@@ -196,13 +211,18 @@ export function historyHtml(rows) {
   }).join('');
 }
 
+let boardPost = 0;
+
 export async function postBoard(state, finish) {
   if (!state.match?.id || !state.game) return;
+  const ticket = ++boardPost;
   const snapshot = state.game.snapshot();
   const response = await fetch(`/api/matches/${state.match.id}/board`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ ...snapshot, finish }),
   });
-  if (response.ok) state.match = await response.json();
+  if (!response.ok || ticket !== boardPost) return;
+  state.match = await response.json();
+  state.matchStamp = JSON.stringify(state.match);
 }

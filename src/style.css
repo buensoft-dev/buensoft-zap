@@ -759,6 +759,40 @@ a.google {
   cursor: default;
 }
 
+.primary.is-waiting:disabled {
+  opacity: 1;
+  filter: grayscale(0.45) brightness(0.42);
+  color: rgba(255, 244, 220, 0.72);
+  cursor: default;
+}
+
+.exit-game {
+  flex: none;
+  align-self: center;
+  width: auto;
+  max-width: max-content;
+  padding: 8px 12px;
+  font-size: 13px;
+  border-radius: 12px;
+}
+
+.departure-note {
+  position: fixed;
+  top: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 8;
+  width: min(520px, calc(100% - 24px));
+  margin: 0;
+  padding: 12px 16px;
+  border-radius: 14px;
+  background: var(--sheet);
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow);
+  text-align: center;
+  font-weight: 700;
+}
+
 .ghost {
   background: transparent;
   color: var(--gold-2);
@@ -1387,6 +1421,14 @@ body:has(.app.is-board) {
     margin-bottom: 6px;
   }
 
+  .app.is-board .exit-game {
+    width: auto;
+    max-width: max-content;
+    flex: none;
+    padding: 5px 8px;
+    font-size: 11px;
+  }
+
   .app.is-board h1 {
     font-size: clamp(15px, 4.4vw, 18px);
     line-height: 1;
@@ -1565,4 +1607,10 @@ body:has(.app.is-board) {
   .app.is-board .time-box strong { font-size: 20px; }
   .app.is-board .submit-word { padding: 9px 16px; font-size: 11px; }
   .app.is-board .tray { padding: 6px; }
+}
+
+.app.is-board .exit-game {
+  width: auto;
+  max-width: max-content;
+  flex: none;
 }

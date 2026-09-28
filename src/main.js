@@ -2,7 +2,7 @@ import './style.css';
 import { Game, MODES, SKILLS } from './game.js';
 import { historyHtml, matchHtml, postBoard } from './compete.js';
 
-const VERSION = '1.0.0';
+const VERSION = '1.1.0';
 const app = document.querySelector('#app');
 const cache = new Map();
 
@@ -39,6 +39,10 @@ const state = {
   marksLocked: false,
   marksReport: null,
   rulesOpen: false,
+  seenNoticeIds: new Set(),
+  departureNote: '',
+  presenceSentAt: 0,
+  lobbyPulseAt: 0,
 };
 
 const THEMES = [
@@ -58,6 +62,7 @@ let animating = false;
 let recordTimer = 0;
 let matchPoll = 0;
 let invitePoll = 0;
+let noteTimer = 0;
 
 const sounds = {
   ctx: null,
@@ -323,7 +328,16 @@ function paintHud() {
   return true;
 }
 
+function notePlayActivity() {
+  if (!state.match?.id || state.screen !== 'play') return;
+  const now = Date.now();
+  if (now - state.presenceSentAt < 2000) return;
+  state.presenceSentAt = now;
+  fetch(`/api/matches/${state.match.id}/pulse`, { method: 'POST' }).catch(() => {});
+}
+
 function onSubmit() {
+  notePlayActivity();
   if (animating || !state.game.canSubmit()) return;
   const row = app.querySelector(`.row[data-row="${state.game.playerRow}"]`);
   if (!row) {
@@ -375,6 +389,9 @@ function finishSubmit() {
 function onKey(event) {
   if (!state.game || state.screen !== 'play') return;
   const key = event.key;
+  if (key === 'Backspace' || key === 'Escape' || key === ' ' || key === 'Enter' || /^[a-zA-ZñÑ]$/.test(key)) {
+    notePlayActivity();
+  }
   if (animating) return;
   if (key === 'Backspace') {
     event.preventDefault();
@@ -774,8 +791,32 @@ async function republishBoard() {
   await postBoard(state, false);
 }
 
+function showDeparture(text) {
+  if (!text) return;
+  state.departureNote = text;
+  clearTimeout(noteTimer);
+  noteTimer = setTimeout(() => {
+    state.departureNote = '';
+    if (state.screen === 'play' || state.screen === 'match') render();
+  }, 6500);
+}
+
+function collectNotices(match) {
+  const fresh = (match.notices || []).filter((notice) => notice.userId !== state.user?.id && !state.seenNoticeIds.has(notice.id));
+  fresh.forEach((notice) => state.seenNoticeIds.add(notice.id));
+  return fresh.map((notice) => notice.text).join(' ');
+}
+
+async function sendLobbyPresence() {
+  if (!state.match?.id || state.match.phase !== 'lobby' || state.screen !== 'match' || document.hidden) return;
+  if (Date.now() - state.lobbyPulseAt < 15000) return;
+  state.lobbyPulseAt = Date.now();
+  await fetch(`/api/matches/${state.match.id}/pulse`, { method: 'POST' }).catch(() => {});
+}
+
 async function refreshMatch() {
   if (!state.match?.id || state.screen === 'play' && document.hidden) return;
+  await sendLobbyPresence();
   const response = await fetch(`/api/matches/${state.match.id}`);
   if (!response.ok) return;
   const next = await response.json();
@@ -784,6 +825,19 @@ async function refreshMatch() {
   const changed = stamp !== state.matchStamp;
   state.match = next;
   state.matchStamp = stamp;
+  const me = next.players.find((player) => player.userId === state.user?.id);
+  if (me?.left || me?.quit) {
+    const idle = Boolean(me.idle);
+    await fetch(`/api/matches/${next.id}/leave`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ idle }),
+    }).catch(() => {});
+    leaveMatch(idle ? 'Se cerró tu lugar por inactividad. Los demás siguen la partida.' : me.quit ? '' : 'Ya no estás en esta partida.');
+    return;
+  }
+  const note = collectNotices(next);
+  if (note) showDeparture(note);
   if (next.phase === 'review') await republishBoard();
   if (previous === 'playing' && next.phase === 'review' && state.screen === 'play') {
     stopClocks();
@@ -793,7 +847,6 @@ async function refreshMatch() {
     render();
     return;
   }
-  const me = next.players.find((player) => player.userId === state.user?.id);
   const others = next.players.filter((player) => !player.left && player.userId !== state.user?.id);
   if (me?.replay && others.length === 0 && (next.phase === 'review' || next.phase === 'podium' || state.viewPodium)) {
     await fetch(`/api/matches/${next.id}/leave`, { method: 'POST' });
@@ -811,18 +864,26 @@ async function refreshMatch() {
     render();
     return;
   }
-  if (state.screen === 'match' && changed) render();
-  if (state.screen === 'play' && next.phase === 'playing') paintRace();
+  if (state.screen === 'match' && (changed || note)) render();
+  if (state.screen === 'play' && next.phase === 'playing') {
+    if (note) render();
+    else paintRace();
+  }
 }
 
 function leaveMatch(message) {
   clearInterval(matchPoll);
+  clearTimeout(noteTimer);
   state.match = null;
   state.matchStamp = '';
   state.viewPodium = false;
   state.game = null;
   state.screen = 'menu';
   state.error = message || '';
+  state.departureNote = '';
+  state.seenNoticeIds = new Set();
+  state.presenceSentAt = 0;
+  state.lobbyPulseAt = 0;
   history.replaceState(null, '', '/');
   render();
 }
@@ -842,6 +903,25 @@ async function beginCompeteRound() {
   render();
 }
 
+async function openMatch(data) {
+  state.match = data;
+  state.matchStamp = JSON.stringify(data);
+  state.viewPodium = false;
+  state.playMode = 'friends';
+  state.error = '';
+  history.replaceState(null, '', `/?partida=${data.id}`);
+  watchMatch();
+  const note = collectNotices(data);
+  if (note) showDeparture(note);
+  if (data.phase === 'playing') {
+    await beginCompeteRound();
+    return;
+  }
+  state.game = null;
+  state.screen = 'match';
+  render();
+}
+
 async function enterMatch(id) {
   if (!state.user) {
     state.pendingMatch = id;
@@ -852,15 +932,43 @@ async function enterMatch(id) {
   const data = await response.json();
   if (!response.ok) {
     state.error = data.error || 'No se pudo entrar';
+    history.replaceState(null, '', '/');
+    state.screen = 'menu';
     render();
     return;
   }
-  state.match = data;
-  state.matchStamp = JSON.stringify(data);
-  state.viewPodium = false;
-  state.screen = 'match';
-  state.playMode = 'friends';
-  watchMatch();
+  await openMatch(data);
+}
+
+async function resumeActiveMatch() {
+  const response = await fetch('/api/matches/active').catch(() => null);
+  if (!response?.ok) return false;
+  const data = await response.json();
+  if (!data?.match) return false;
+  await openMatch(data.match);
+  return true;
+}
+
+async function exitGame() {
+  stopClocks();
+  if (state.match?.id) {
+    const response = await fetch(`/api/matches/${state.match.id}/leave`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ quit: true }),
+    });
+    if (!response.ok) {
+      state.departureNote = 'No se pudo salir. Intenta de nuevo.';
+      if (state.screen === 'play') startClocks();
+      render();
+      return;
+    }
+    leaveMatch('');
+    return;
+  }
+  state.game = null;
+  state.screen = 'menu';
+  state.savedId = null;
   render();
 }
 
@@ -1125,7 +1233,9 @@ function render() {
           <div class="stat"><span>Marcador</span><strong>${game ? String(game.marker).padStart(2, '0') : '00'}</strong></div>
           <div class="stat"><span>Puntos</span><strong>${game ? game.pointsTotal : 0}</strong></div>
         </div>
+        ${state.screen === 'play' ? '<button class="ghost exit-game" id="exit-game" type="button">Salir</button>' : ''}
       </header>
+      ${state.departureNote ? `<p class="departure-note" role="status">${escapeHtml(state.departureNote)}</p>` : ''}
       ${state.screen === 'loading' ? '<p class="hint">Cargando diccionario…</p>' : ''}
       ${game && state.screen !== 'menu' ? `
         <div class="layout">
@@ -1229,15 +1339,9 @@ function bind() {
         render();
         return;
       }
-      state.match = data;
-      state.matchStamp = JSON.stringify(data);
-      state.viewPodium = false;
-      state.screen = 'match';
-      history.replaceState(null, '', `/?partida=${data.id}`);
-      watchMatch();
       const users = await fetch('/api/users').then((item) => item.json()).catch(() => []);
       state.users = Array.isArray(users) ? users : [];
-      render();
+      await openMatch(data);
     };
   }
   app.querySelectorAll('[data-invite]').forEach((button) => {
@@ -1285,6 +1389,9 @@ function bind() {
         render();
         return;
       }
+      matchReady.disabled = true;
+      matchReady.classList.add('is-waiting');
+      matchReady.textContent = 'ESPERANDO A LOS DEMÁS';
       const response = await fetch(`/api/matches/${state.match.id}/ready`, { method: 'POST' });
       state.match = await response.json();
       state.matchStamp = JSON.stringify(state.match);
@@ -1362,6 +1469,7 @@ function bind() {
   app.querySelectorAll('[data-tile]').forEach((button) => {
     button.onclick = () => {
       if (animating) return;
+      notePlayActivity();
       state.game.place(Number(button.dataset.tile));
       state.popSlot = state.game.filledCount() - 1;
       sounds.tap();
@@ -1371,6 +1479,7 @@ function bind() {
   app.querySelectorAll('[data-slot]').forEach((button) => {
     button.onclick = () => {
       if (animating) return;
+      notePlayActivity();
       state.game.removeFrom(Number(button.dataset.slot));
       state.popSlot = null;
       sounds.back();
@@ -1398,6 +1507,8 @@ function bind() {
       render();
     };
   });
+  const exitGameButton = app.querySelector('#exit-game');
+  if (exitGameButton) exitGameButton.onclick = exitGame;
   const goHome = () => {
     stopClocks();
     state.game = null;
@@ -1456,7 +1567,10 @@ Promise.all([
   }
   const partida = new URLSearchParams(window.location.search).get('partida') || state.pendingMatch;
   if (partida) enterMatch(partida);
-  else render();
+  else {
+    render();
+    if (state.user) resumeActiveMatch();
+  }
 });
 
 window.addEventListener('pointerdown', () => sounds.ready(), { once: true });

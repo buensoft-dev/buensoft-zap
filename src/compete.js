@@ -60,10 +60,10 @@ function lobbyHtml(state, match) {
           </div>
         ` : ''}
         <div class="sheet-actions">
-          <button class="primary" id="match-ready" type="button" ${me?.ready ? 'disabled' : ''}>INICIAR PARTIDA</button>
+          ${readyControl('INICIAR PARTIDA', me?.ready)}
           <button class="ghost" id="match-leave" type="button">Salir</button>
         </div>
-        <p class="hint">El juego empieza cuando todos los que están en la sala pulsan Iniciar partida. Si falta un invitado, el anfitrión puede quitar esa invitación.</p>
+        <p class="hint">El juego empieza cuando todos los que siguen en la sala pulsan Iniciar partida. Si alguien se sale o deja de responder, la partida sigue con los demás.</p>
       </div>
     </div>
   `;
@@ -85,6 +85,7 @@ function withLocalWords(match, state) {
 
 function reviewHtml(match, state) {
   const players = withLocalWords(match, state);
+  const me = players.find((player) => player.userId === match.you);
   const boards = players.filter((player) => !player.left || player.board).map((player) => `
     <article class="mini">
       <header><strong>${escapeHtml(player.name)}</strong><span>${player.roundScore || 0} pts</span></header>
@@ -109,14 +110,19 @@ function reviewHtml(match, state) {
             <button class="primary" id="match-ready" type="button">VER PODIO</button>
             ${replayControls(match)}
           ` : `
-            <button class="primary" id="match-ready" type="button">SIGUIENTE RONDA</button>
+            ${readyControl('SIGUIENTE RONDA', me?.ready)}
           `}
           <button class="ghost" id="match-leave" type="button">Salir</button>
         </div>
-        <p class="hint">${match.round >= match.rounds ? 'Puedes ver el podio sin esperar a los demás. Volver a jugar empieza cuando todos los que siguen en la partida lo pulsan.' : 'Las palabras repetidas entre jugadores se tachan y no suman. Todos los que siguen deben pulsar Siguiente ronda.'}</p>
+        <p class="hint">${match.round >= match.rounds ? 'Puedes ver el podio sin esperar a los demás. Volver a jugar empieza cuando todos los que siguen en la partida lo pulsan.' : 'Las palabras repetidas entre jugadores se tachan y no suman. Si alguien se sale o pasa un minuto sin jugar, los demás pueden seguir. Cuando ya pulsaste, el botón queda en espera.'}</p>
       </div>
     </div>
   `;
+}
+
+function readyControl(label, waiting) {
+  if (waiting) return '<button class="primary is-waiting" id="match-ready" type="button" disabled>ESPERANDO A LOS DEMÁS</button>';
+  return `<button class="primary" id="match-ready" type="button">${label}</button>`;
 }
 
 function medal(place) {

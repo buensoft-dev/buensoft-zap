@@ -53,8 +53,130 @@ function code() {
   return crypto.randomBytes(4).toString('hex');
 }
 
+const IDLE_MS = 60 * 1000;
+const MATCH_COOKIE = 'zap_match';
+
 function activePlayers(match) {
   return match.players.filter((player) => !player.left);
+}
+
+function blankPlayer(user) {
+  return {
+    userId: user.id,
+    name: user.name,
+    ready: false,
+    replay: false,
+    left: false,
+    quit: false,
+    idle: false,
+    finished: false,
+    total: 0,
+    roundScore: 0,
+    board: null,
+    lastSeen: Date.now(),
+  };
+}
+
+function pushNotice(match, text, userId) {
+  const notices = Array.isArray(match.notices) ? match.notices : [];
+  notices.push({
+    id: crypto.randomBytes(4).toString('hex'),
+    text,
+    userId: userId || '',
+    at: Date.now(),
+  });
+  match.notices = notices.slice(-8);
+}
+
+function readCookie(req, name) {
+  const header = req.headers.cookie || '';
+  const found = header.split(';').map((part) => part.trim()).find((part) => part.startsWith(`${name}=`));
+  if (!found) return '';
+  return decodeURIComponent(found.slice(name.length + 1));
+}
+
+function cookieFlags(req, maxAge) {
+  const secure = (req.get('x-forwarded-proto') || req.protocol) === 'https';
+  return `Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAge}${secure ? '; Secure' : ''}`;
+}
+
+function setMatchCookie(req, res, id) {
+  res.setHeader('Set-Cookie', `${MATCH_COOKIE}=${encodeURIComponent(id)}; ${cookieFlags(req, 12 * 60 * 60)}`);
+}
+
+function clearMatchCookie(req, res) {
+  res.setHeader('Set-Cookie', `${MATCH_COOKIE}=; ${cookieFlags(req, 0)}`);
+}
+
+function matchCookie(req) {
+  return readCookie(req, MATCH_COOKIE).replace(/[^a-f0-9]/gi, '').slice(0, 32);
+}
+
+function beginPlaying(match, room) {
+  const now = Date.now();
+  match.phase = 'playing';
+  match.seed = `${match.id}|${match.round}|${match.modeId}`;
+  match.finisher = null;
+  room.forEach((item) => {
+    item.ready = false;
+    item.finished = false;
+    item.roundScore = 0;
+    item.board = null;
+    item.lastSeen = now;
+  });
+}
+
+function tryAdvance(match) {
+  const pending = (match.invites || []).some((invite) => invite.status === 'pending');
+  const room = activePlayers(match);
+  if (match.phase === 'lobby' && !pending && room.length >= 2 && room.every((item) => item.ready)) {
+    beginPlaying(match, room);
+    return;
+  }
+  if (match.phase === 'review' && room.length >= 1 && room.every((item) => item.ready)) {
+    match.players.forEach((item) => {
+      item.total += item.roundScore || 0;
+      item.roundScore = 0;
+      item.board = null;
+      item.finished = false;
+      item.ready = false;
+    });
+    if (match.round >= match.rounds) {
+      match.phase = 'podium';
+      return;
+    }
+    match.round += 1;
+    beginPlaying(match, activePlayers(match));
+  }
+}
+
+function sweepMatch(match) {
+  if (!['lobby', 'playing', 'review'].includes(match.phase)) return false;
+  const now = Date.now();
+  let changed = false;
+  for (const player of match.players) {
+    if (player.left || player.quit) continue;
+    if (!player.lastSeen) {
+      player.lastSeen = now;
+      changed = true;
+    }
+  }
+  let expired = false;
+  for (const player of match.players) {
+    if (player.left || player.quit || !player.lastSeen) continue;
+    if (match.phase === 'review' && player.ready) continue;
+    if (now - Number(player.lastSeen) < IDLE_MS) continue;
+    player.left = true;
+    player.idle = true;
+    player.ready = false;
+    pushNotice(match, `${player.name} salió por inactividad`, player.userId);
+    expired = true;
+  }
+  if (expired) {
+    if (match.phase === 'review') scoreRound(match);
+    tryAdvance(match);
+  }
+  return changed || expired;
 }
 
 function cleanBoard(body, dict, skillId) {
@@ -135,12 +257,15 @@ function publicMatch(match, userId) {
     finisher: match.finisher,
     you: userId || '',
     invites: match.invites,
+    notices: Array.isArray(match.notices) ? match.notices.slice(-8) : [],
     players: ranked.map((player, index) => ({
       userId: player.userId,
       name: player.name,
       ready: player.ready,
       replay: Boolean(player.replay),
       left: player.left,
+      quit: Boolean(player.quit),
+      idle: Boolean(player.idle),
       finished: player.finished,
       total: player.total,
       roundScore: player.roundScore,
@@ -236,8 +361,8 @@ function updateMatch(id, mutate) {
   const run = matchQueue.then(async () => {
     const match = await load(id);
     if (!match) return null;
-    await mutate(match);
-    await save(match);
+    const keep = await mutate(match);
+    if (keep !== false) await save(match);
     return match;
   });
   matchQueue = run.then(() => undefined, () => undefined);
@@ -343,29 +468,50 @@ export function matchRoutes(app) {
         seed: '',
         finisher: null,
         invites: [],
-        players: [{
-          userId: user.id,
-          name: user.name,
-          ready: false,
-          replay: false,
-          left: false,
-          finished: false,
-          total: 0,
-          roundScore: 0,
-          board: null,
-        }],
+        players: [blankPlayer(user)],
+        notices: [],
         createdAt: new Date().toISOString(),
       };
       await save(match);
+      setMatchCookie(req, res, match.id);
       res.status(201).json(publicMatch(match, user.id));
     } catch (error) {
       res.status(error.status || 500).json({ error: error.message || 'No se pudo crear la partida' });
     }
   });
 
+  app.get('/api/matches/active', async (req, res) => {
+    try {
+      const user = currentUser(req);
+      const id = matchCookie(req);
+      if (!user || !id) {
+        if (id) clearMatchCookie(req, res);
+        res.json({ match: null });
+        return;
+      }
+      let match = await load(id);
+      if (match) {
+        match = await updateMatch(id, (current) => (sweepMatch(current) ? undefined : false));
+      }
+      const player = match?.players?.find((item) => item.userId === user.id);
+      const open = match && ['lobby', 'playing', 'review', 'podium'].includes(match.phase);
+      if (!open || !player || player.left || player.quit || player.idle) {
+        clearMatchCookie(req, res);
+        res.json({ match: null });
+        return;
+      }
+      setMatchCookie(req, res, match.id);
+      res.json({ match: publicMatch(match, user.id) });
+    } catch (error) {
+      res.status(error.status || 500).json({ error: error.message || 'No se pudo recuperar la partida' });
+    }
+  });
+
   app.get('/api/matches/:id', async (req, res) => {
     try {
-      const match = await load(req.params.id);
+      const existing = await load(req.params.id);
+      if (!existing) fail('La partida no existe', 404);
+      const match = await updateMatch(req.params.id, (current) => (sweepMatch(current) ? undefined : false));
       if (!match) fail('La partida no existe', 404);
       const user = currentUser(req);
       res.json(publicMatch(match, user?.id));
@@ -379,25 +525,21 @@ export function matchRoutes(app) {
       const user = requireUser(req);
       const match = await load(req.params.id);
       if (!match) fail('La partida no existe', 404);
-      if (match.phase !== 'lobby') fail('La partida ya comenzó');
       match.invites = match.invites.filter((invite) => invite.userId !== user.id);
-      let player = match.players.find((item) => item.userId === user.id);
-      if (player) player.left = false;
-      else if (activePlayers(match).length >= match.seats) fail('La partida ya está llena');
-      else {
-        match.players.push({
-          userId: user.id,
-          name: user.name,
-          ready: false,
-          replay: false,
-          left: false,
-          finished: false,
-          total: 0,
-          roundScore: 0,
-          board: null,
-        });
+      const player = match.players.find((item) => item.userId === user.id);
+      if (player?.quit) fail('Saliste de esta partida y no puedes volver', 403);
+      if (player?.idle) fail('Se cerró tu lugar por inactividad', 403);
+      if (player?.left) fail('Ya no estás en esta partida', 403);
+      if (player) {
+        setMatchCookie(req, res, match.id);
+        res.json(publicMatch(match, user.id));
+        return;
       }
+      if (match.phase !== 'lobby') fail('La partida ya comenzó');
+      if (activePlayers(match).length >= match.seats) fail('La partida ya está llena');
+      match.players.push(blankPlayer(user));
       await save(match);
+      setMatchCookie(req, res, match.id);
       res.json(publicMatch(match, user.id));
     } catch (error) {
       res.status(error.status || 500).json({ error: error.message || 'No se pudo entrar' });
@@ -443,21 +585,21 @@ export function matchRoutes(app) {
       if (!invite) fail('No tienes esa invitación');
       if (req.body?.accept && match.phase === 'lobby') {
         invite.status = 'accepted';
-        if (!match.players.some((player) => player.userId === user.id)) {
+        if (!match.players.some((player) => player.userId === user.id && !player.left && !player.quit)) {
           if (activePlayers(match).length >= match.seats) fail('La partida ya está llena');
-          match.players.push({
-            userId: user.id,
-            name: user.name,
-            ready: false,
-            replay: false,
-            left: false,
-            finished: false,
-            total: 0,
-            roundScore: 0,
-            board: null,
-          });
+          const previous = match.players.find((player) => player.userId === user.id);
+          if (previous?.quit || previous?.idle) fail('Ya no puedes entrar a esta partida', 403);
+          if (previous) {
+            previous.left = false;
+            previous.lastSeen = Date.now();
+          } else match.players.push(blankPlayer(user));
         }
-      } else invite.status = 'declined';
+        await save(match);
+        setMatchCookie(req, res, match.id);
+        res.json(publicMatch(match, user.id));
+        return;
+      }
+      invite.status = 'declined';
       await save(match);
       res.json(publicMatch(match, user.id));
     } catch (error) {
@@ -473,7 +615,12 @@ export function matchRoutes(app) {
       const target = String(req.body?.userId || '');
       match.invites = match.invites.filter((invite) => invite.userId !== target);
       const player = match.players.find((item) => item.userId === target && item.userId !== match.hostId);
-      if (player) player.left = true;
+      if (player && !player.left) {
+        player.left = true;
+        player.ready = false;
+        pushNotice(match, `${player.name} ya no está en la partida`, player.userId);
+        tryAdvance(match);
+      }
       await save(match);
       res.json(publicMatch(match, user.id));
     } catch (error) {
@@ -484,43 +631,18 @@ export function matchRoutes(app) {
   app.post('/api/matches/:id/ready', async (req, res) => {
     try {
       const user = requireUser(req);
-      const match = await load(req.params.id);
+      const existing = await load(req.params.id);
+      if (!existing) fail('La partida no existe', 404);
+      const match = await updateMatch(req.params.id, (current) => {
+        sweepMatch(current);
+        const player = activePlayers(current).find((item) => item.userId === user.id);
+        if (!player) fail('No estás en esta partida', 403);
+        player.ready = true;
+        player.lastSeen = Date.now();
+        tryAdvance(current);
+      });
       if (!match) fail('La partida no existe', 404);
-      const player = activePlayers(match).find((item) => item.userId === user.id);
-      if (!player) fail('No estás en esta partida', 403);
-      player.ready = true;
-      const pending = match.invites.some((invite) => invite.status === 'pending');
-      const room = activePlayers(match);
-      if (match.phase === 'lobby' && !pending && room.length >= 2 && room.every((item) => item.ready)) {
-        match.phase = 'playing';
-        match.seed = `${match.id}|${match.round}|${match.modeId}`;
-        match.finisher = null;
-        room.forEach((item) => {
-          item.ready = false;
-          item.finished = false;
-          item.roundScore = 0;
-          item.board = null;
-        });
-      }
-      if (match.phase === 'review' && room.length >= 1 && room.every((item) => item.ready)) {
-        match.players.forEach((item) => {
-          item.total += item.roundScore || 0;
-        });
-        room.forEach((item) => {
-          item.ready = false;
-          item.finished = false;
-          item.roundScore = 0;
-          item.board = null;
-        });
-        if (match.round >= match.rounds) match.phase = 'podium';
-        else {
-          match.round += 1;
-          match.phase = 'playing';
-          match.seed = `${match.id}|${match.round}|${match.modeId}`;
-          match.finisher = null;
-        }
-      }
-      await save(match);
+      setMatchCookie(req, res, match.id);
       res.json(publicMatch(match, user.id));
     } catch (error) {
       res.status(error.status || 500).json({ error: error.message || 'No se pudo marcar listo' });
@@ -558,6 +680,7 @@ export function matchRoutes(app) {
         match.seed = '';
         match.savedHistory = false;
         match.createdAt = new Date().toISOString();
+        const now = Date.now();
         room.forEach((item) => {
           item.ready = false;
           item.replay = false;
@@ -565,6 +688,7 @@ export function matchRoutes(app) {
           item.total = 0;
           item.roundScore = 0;
           item.board = null;
+          item.lastSeen = now;
         });
       }
       await save(match);
@@ -581,9 +705,11 @@ export function matchRoutes(app) {
       if (!existing) fail('La partida no existe', 404);
       const dict = await dictionary(existing.modeId);
       const match = await updateMatch(req.params.id, (current) => {
-        const player = current.players.find((item) => item.userId === user.id && !item.left);
+        sweepMatch(current);
+        const player = current.players.find((item) => item.userId === user.id && !item.left && !item.quit);
         if (!player) fail('No estás en esta partida', 403);
         if (current.phase !== 'playing' && current.phase !== 'review') return;
+        player.lastSeen = Date.now();
         const nextBoard = cleanBoard(req.body, dict, current.skillId);
         const previous = player.board?.words?.length || 0;
         if (nextBoard.words.length >= previous) player.board = nextBoard;
@@ -592,6 +718,9 @@ export function matchRoutes(app) {
           current.phase = 'review';
           player.finished = true;
           scoreRound(current);
+          activePlayers(current).forEach((item) => {
+            item.lastSeen = Date.now();
+          });
         } else if (current.phase === 'review') {
           player.finished = true;
           scoreRound(current);
@@ -604,17 +733,51 @@ export function matchRoutes(app) {
     }
   });
 
+  app.post('/api/matches/:id/pulse', async (req, res) => {
+    try {
+      const user = requireUser(req);
+      const existing = await load(req.params.id);
+      if (!existing) fail('La partida no existe', 404);
+      const match = await updateMatch(req.params.id, (current) => {
+        const player = current.players.find((item) => item.userId === user.id && !item.left && !item.quit);
+        let touched = false;
+        if (player && (current.phase === 'lobby' || current.phase === 'playing')) {
+          player.lastSeen = Date.now();
+          touched = true;
+        }
+        return touched || sweepMatch(current) ? undefined : false;
+      });
+      if (!match) fail('La partida no existe', 404);
+      res.json(publicMatch(match, user.id));
+    } catch (error) {
+      res.status(error.status || 500).json({ error: error.message || 'No se pudo registrar la actividad' });
+    }
+  });
+
   app.post('/api/matches/:id/leave', async (req, res) => {
     try {
       const user = requireUser(req);
-      const match = await load(req.params.id);
-      if (!match) fail('La partida no existe', 404);
-      const player = match.players.find((item) => item.userId === user.id);
-      if (player) {
+      const existing = await load(req.params.id);
+      if (!existing) fail('La partida no existe', 404);
+      const match = await updateMatch(req.params.id, (current) => {
+        const player = current.players.find((item) => item.userId === user.id);
+        if (!player || player.left) return false;
+        const idle = Boolean(req.body?.idle) && !req.body?.quit;
         player.left = true;
-        if (match.phase === 'playing' || match.phase === 'review') scoreRound(match);
-      }
-      await save(match);
+        player.ready = false;
+        if (idle) {
+          player.idle = true;
+          pushNotice(current, `${player.name} salió por inactividad`, player.userId);
+        } else {
+          player.quit = true;
+          player.idle = false;
+          pushNotice(current, `${player.name} salió de la partida`, player.userId);
+        }
+        if (current.phase === 'review') scoreRound(current);
+        tryAdvance(current);
+      });
+      if (!match) fail('La partida no existe', 404);
+      clearMatchCookie(req, res);
       res.json(publicMatch(match, user.id));
     } catch (error) {
       res.status(error.status || 500).json({ error: error.message || 'No se pudo salir' });

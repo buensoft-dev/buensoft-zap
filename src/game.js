@@ -45,6 +45,21 @@ function pickSurprise(key, level) {
   };
 }
 
+export function shortGloss(entry) {
+  const raw = String(entry || '');
+  const sense = raw.match(/(?:^|\n)\s*1\.\s*(?:\([^)]*\)\s*)?([^\n.]{1,48})/);
+  if (sense) {
+    return sense[1]
+      .replace(/\s+(masculine|feminine|noun|verbo|sustantivo|adverbio).*$/i, '')
+      .replace(/[,;].*$/, '')
+      .trim();
+  }
+  const line = raw.split('\n').map((item) => item.trim()).find((item) => (
+    item && !item.includes('·') && !/^\([^)]*\)$/.test(item) && !/^(interjection|adverb|adverbio|sustantivo|verbo|masculine|feminine|noun)\b/i.test(item)
+  ));
+  return line ? line.split(/[.;]/)[0].trim().slice(0, 48) : '';
+}
+
 export class Game {
   constructor(dictionary, skillId, options = {}) {
     this.dictionary = dictionary;
@@ -56,6 +71,9 @@ export class Game {
       ? mulberry32(hashString(String(options.seed)))
       : (this.daily ? mulberry32(hashString(`${this.day}|${options.modeId || ''}`)) : null);
     this.compete = Boolean(options.compete);
+    this.translate = Boolean(options.translate);
+    this.previewKey = '';
+    this.previewList = [];
     this.surpriseKey = options.seed
       ? String(options.seed)
       : (this.daily ? `${this.day}|${options.modeId || ''}` : `libre|${Date.now()}|${Math.random()}`);
@@ -458,6 +476,27 @@ export class Game {
     const indexes = this.hintTiles();
     this.tipIndexes = indexes;
     return indexes;
+  }
+
+  previewWords() {
+    const visible = this.source
+      .map((tile, index) => ({ tile, index }))
+      .filter(({ tile }) => !tile.hidden && tile.letter);
+    const sig = `${visible.map(({ tile }) => (tile.wild ? '*' : tile.letter)).join('')}|${this.used.size}`;
+    if (sig === this.previewKey) return this.previewList;
+    const picked = new Map();
+    for (const word of this.words) {
+      if (this.used.has(word) || word.length < MIN_LETTERS || word.length > SLOTS) continue;
+      if (picked.has(word.length)) continue;
+      if (!this.assignTiles(word, visible)) continue;
+      const gloss = shortGloss(this.dictionary[word]);
+      if (!gloss) continue;
+      picked.set(word.length, gloss);
+      if (picked.size >= 3) break;
+    }
+    this.previewKey = sig;
+    this.previewList = [...picked.values()].slice(0, 3);
+    return this.previewList;
   }
 
   hintTiles() {

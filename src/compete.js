@@ -20,21 +20,23 @@ function lobbyHtml(state, match) {
   const mode = MODES.find((item) => item.id === match.modeId)?.label || match.modeId;
   const skill = SKILLS.find((item) => item.id === match.skillId)?.name || '';
   const me = match.players.find((player) => player.userId === state.user?.id);
+  const seated = match.players.filter((player) => !player.left);
   const pending = match.invites.filter((invite) => invite.status === 'pending');
+  const host = state.user?.id === match.hostId;
   const users = (state.users || []).filter((user) => user.id !== state.user?.id && !match.players.some((player) => player.userId === user.id && !player.left));
   return `
     <div class="overlay">
       <div class="sheet match-sheet">
         <p class="eyebrow">Competencia</p>
         <h2>Ronda ${match.round} de ${match.rounds}</h2>
-        <p class="hint">${mode} · ${skill} · hasta ${match.seats} jugadores</p>
+        <p class="hint">${mode} · ${skill} · ${seated.length} de ${match.seats} jugadores</p>
         <p class="hint">Enlace de invitación</p>
         <div class="invite-link"><code>${matchLink(match.id)}</code><button class="ghost" id="copy-link" type="button">Copiar</button></div>
         <ul class="roster">
-          ${match.players.filter((player) => !player.left).map((player) => `
+          ${seated.map((player) => `
             <li>
               <span>${escapeHtml(player.name)}${player.userId === match.hostId ? ' · anfitrión' : ''}</span>
-              <em>${player.userId === match.hostId ? 'Anfitrión' : player.ready ? 'Listo' : 'Quiere jugar'}</em>
+              <em>${seatStatus(player, match)}</em>
               ${state.user?.id === match.hostId && player.userId !== match.hostId ? `<button class="ghost" data-remove="${player.userId}" type="button">Quitar</button>` : ''}
             </li>
           `).join('')}
@@ -60,10 +62,10 @@ function lobbyHtml(state, match) {
           </div>
         ` : ''}
         <div class="sheet-actions">
-          ${readyControl('INICIAR PARTIDA', me?.ready)}
+          ${host ? readyControl('INICIAR PARTIDA', me?.ready, `ESPERANDO JUGADORES ${seated.length}/${match.seats}`) : ''}
           <button class="ghost" id="match-leave" type="button">Salir</button>
         </div>
-        <p class="hint">El juego empieza cuando todos los que siguen en la sala pulsan Iniciar partida. Si alguien se sale o deja de responder, la partida sigue con los demás.</p>
+        <p class="hint">${host ? 'Al pulsar Iniciar partida el botón espera a que se unan los jugadores de la sala. Cuando estén todos, la partida empieza sola.' : 'Aquí ves quién ya está en la sala. Cuando el anfitrión inicie y se complete el grupo, la partida empieza sola.'}</p>
       </div>
     </div>
   `;
@@ -120,9 +122,14 @@ function reviewHtml(match, state) {
   `;
 }
 
-function readyControl(label, waiting) {
-  if (waiting) return '<button class="primary is-waiting" id="match-ready" type="button" disabled>ESPERANDO A LOS DEMÁS</button>';
+function readyControl(label, waiting, waitingLabel = 'ESPERANDO A LOS DEMÁS') {
+  if (waiting) return `<button class="primary is-waiting" id="match-ready" type="button" disabled>${waitingLabel}</button>`;
   return `<button class="primary" id="match-ready" type="button">${label}</button>`;
+}
+
+function seatStatus(player, match) {
+  if (player.userId === match.hostId) return player.ready ? 'Listo · esperando' : 'Anfitrión';
+  return 'En la sala';
 }
 
 function medal(place) {

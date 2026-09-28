@@ -127,9 +127,10 @@ function beginPlaying(match, room) {
 }
 
 function tryAdvance(match) {
-  const pending = (match.invites || []).some((invite) => invite.status === 'pending');
   const room = activePlayers(match);
-  if (match.phase === 'lobby' && !pending && room.length >= 2 && room.every((item) => item.ready)) {
+  const host = room.find((item) => item.userId === match.hostId);
+  if (match.phase === 'lobby' && host?.ready && room.length >= match.seats) {
+    match.startedAt = Date.now();
     beginPlaying(match, room);
     return;
   }
@@ -249,8 +250,10 @@ function publicMatch(match, userId) {
     hostName: match.hostName || '',
     modeId: match.modeId,
     skillId: match.skillId,
+    translate: Boolean(match.translate),
     rounds: match.rounds,
     seats: match.seats,
+    startedAt: match.startedAt || 0,
     round: match.round,
     phase: match.phase,
     seed: match.seed,
@@ -451,8 +454,8 @@ export function matchRoutes(app) {
   app.post('/api/matches', async (req, res) => {
     try {
       const user = requireUser(req);
-      const seats = Math.min(5, Math.max(2, Number(req.body?.seats) || 2));
-      const rounds = Math.min(5, Math.max(1, Number(req.body?.rounds) || 1));
+      const seats = Math.min(10, Math.max(2, Number(req.body?.seats) || 2));
+      const rounds = Math.min(10, Math.max(2, Number(req.body?.rounds) || 2));
       const modeId = req.body?.modeId === 'en-es' ? 'en-es' : 'es-en';
       const skillId = [1, 2, 3].includes(Number(req.body?.skillId)) ? Number(req.body.skillId) : 2;
       const match = {
@@ -461,6 +464,7 @@ export function matchRoutes(app) {
         hostName: user.name,
         modeId,
         skillId,
+        translate: Boolean(req.body?.translate),
         rounds,
         seats,
         round: 1,
@@ -523,22 +527,22 @@ export function matchRoutes(app) {
   app.post('/api/matches/:id/join', async (req, res) => {
     try {
       const user = requireUser(req);
-      const match = await load(req.params.id);
+      const existing = await load(req.params.id);
+      if (!existing) fail('La partida no existe', 404);
+      const match = await updateMatch(req.params.id, (current) => {
+        current.invites = (current.invites || []).filter((invite) => invite.userId !== user.id);
+        const player = current.players.find((item) => item.userId === user.id);
+        if (player?.quit) fail('Saliste de esta partida y no puedes volver', 403);
+        if (player?.idle) fail('Se cerró tu lugar por inactividad', 403);
+        if (player?.left) fail('Ya no estás en esta partida', 403);
+        if (player) return false;
+        if (current.phase !== 'lobby') fail('La partida ya comenzó');
+        if (activePlayers(current).length >= current.seats) fail('La partida ya está llena');
+        current.players.push(blankPlayer(user));
+        pushNotice(current, `${user.name} se unió y está esperando`, user.id);
+        tryAdvance(current);
+      });
       if (!match) fail('La partida no existe', 404);
-      match.invites = match.invites.filter((invite) => invite.userId !== user.id);
-      const player = match.players.find((item) => item.userId === user.id);
-      if (player?.quit) fail('Saliste de esta partida y no puedes volver', 403);
-      if (player?.idle) fail('Se cerró tu lugar por inactividad', 403);
-      if (player?.left) fail('Ya no estás en esta partida', 403);
-      if (player) {
-        setMatchCookie(req, res, match.id);
-        res.json(publicMatch(match, user.id));
-        return;
-      }
-      if (match.phase !== 'lobby') fail('La partida ya comenzó');
-      if (activePlayers(match).length >= match.seats) fail('La partida ya está llena');
-      match.players.push(blankPlayer(user));
-      await save(match);
       setMatchCookie(req, res, match.id);
       res.json(publicMatch(match, user.id));
     } catch (error) {

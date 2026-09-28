@@ -2,7 +2,7 @@ import './style.css';
 import { Game, MODES, SKILLS } from './game.js';
 import { historyHtml, matchHtml, postBoard } from './compete.js';
 
-const VERSION = '1.1.0';
+const VERSION = '1.2.0';
 const app = document.querySelector('#app');
 const cache = new Map();
 
@@ -20,6 +20,8 @@ const state = {
   popSlot: null,
   followedRow: null,
   daily: true,
+  translate: localStorage.getItem('zap-translate') === '1',
+  heardStart: 0,
   theme: localStorage.getItem('zap-theme') || 'neon',
   targetPoints: 0,
   targetName: '',
@@ -34,7 +36,7 @@ const state = {
   history: [],
   invites: [],
   playMode: 'solo',
-  competeSeats: 4,
+  competeSeats: 2,
   competeRounds: 2,
   marksLocked: false,
   marksReport: null,
@@ -121,6 +123,11 @@ const sounds = {
   record() {
     [523, 659, 784, 1046].forEach((freq, index) => {
       setTimeout(() => this.tone(freq, 0.16, 'square', 0.07), index * 80);
+    });
+  },
+  startMatch() {
+    [392, 523, 659, 784, 1046].forEach((freq, index) => {
+      setTimeout(() => this.tone(freq, 0.18, 'square', 0.08), index * 90);
     });
   },
 };
@@ -228,6 +235,7 @@ async function saveScore(event) {
       mode: modeById(state.modeId).label,
       daily: state.daily,
       day: state.daily ? today() : '',
+      translate: Boolean(state.game?.translate),
     }),
   });
   const data = await response.json();
@@ -281,6 +289,7 @@ function beginMatch() {
         daily: state.daily,
         day: today(),
         modeId: state.modeId,
+        translate: state.translate,
       });
       state.screen = 'splash';
       state.splashTitle = `NIVEL ${state.game.level}`;
@@ -435,6 +444,20 @@ function onKey(event) {
       render();
     }
   }
+}
+
+function translateHtml(game) {
+  if (!game?.translate || state.screen !== 'play') return '';
+  const rows = game.previewWords();
+  if (!rows.length) return '';
+  return `
+    <aside class="card translate-card">
+      <span>Traducciones</span>
+      <ul>
+        ${rows.map((gloss) => `<li>${escapeHtml(gloss)}</li>`).join('')}
+      </ul>
+    </aside>
+  `;
 }
 
 function meaningBlock(game) {
@@ -663,14 +686,15 @@ function scoreTitle() {
   const mode = modeById(state.modeId).label;
   const skill = boardSkill(skillById(state.skillId).name);
   const prefix = state.daily ? 'Desafío del día · ' : '';
-  return `${prefix}Top Score - ${mode} - ${skill}`;
+  const gloss = state.translate ? ' · Traducción' : '';
+  return `${prefix}Top Score - ${mode} - ${skill}${gloss}`;
 }
 
 function visibleScores() {
   const mode = modeById(state.modeId).label;
   const skill = boardSkill(skillById(state.skillId).name);
   return state.scores
-    .filter((row) => row.mode === mode && boardSkill(row.skill) === skill && Boolean(row.daily) === state.daily && (!state.daily || row.day === today()))
+    .filter((row) => row.mode === mode && boardSkill(row.skill) === skill && Boolean(row.daily) === state.daily && Boolean(row.translate) === state.translate && (!state.daily || row.day === today()))
     .sort((a, b) => b.points - a.points || b.level - a.level || String(a.createdAt).localeCompare(String(b.createdAt)))
     .slice(0, 10);
 }
@@ -691,12 +715,16 @@ function scoresHtml() {
   return `<ol class="tops">${rows}</ol>`;
 }
 
+function googleLink() {
+  return `<a class="google" href="/api/auth/google"><svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M10 17v-3H3v-4h7V7l5 5-5 5zm9-14H12v2h7v14h-7v2h9V3z"/></svg><span>Entrar con Google</span></a>`;
+}
+
 function accountHtml() {
   if (!state.authReady) return '';
   if (state.user) {
     return `<div class="account"><span>Entraste como <strong>${escapeHtml(state.user.name)}</strong></span><button class="ghost" id="logout" type="button">Salir</button></div>`;
   }
-  return `<a class="primary google" href="/api/auth/google">Entrar con Google</a>`;
+  return googleLink();
 }
 
 function saveFormHtml(game) {
@@ -733,14 +761,24 @@ function invitesHtml() {
   return `<div class="invite-alert"><h3>Invitación a una partida</h3><ul class="roster">${invites}</ul></div>`;
 }
 
+function countOptions(from, to, unit, selected) {
+  return Array.from({ length: to - from + 1 }, (_, index) => from + index)
+    .map((count) => `<option value="${count}" ${selected === count ? 'selected' : ''}>${count} ${unit}</option>`)
+    .join('');
+}
+
 function friendsPanel() {
   return `
     <p class="menu-label">Nueva partida</p>
-    <div class="choices">
-      ${[2, 3, 4, 5].map((count) => `<button class="choice ${state.competeSeats === count ? 'active' : ''}" data-seats="${count}" type="button">${count} jugadores</button>`).join('')}
-    </div>
-    <div class="choices">
-      ${[1, 2, 3, 4, 5].map((count) => `<button class="choice ${state.competeRounds === count ? 'active' : ''}" data-rounds="${count}" type="button">${count} ${count === 1 ? 'ronda' : 'rondas'}</button>`).join('')}
+    <div class="match-fields">
+      <label>
+        <span class="menu-label">Jugadores</span>
+        <select id="seats">${countOptions(2, 10, 'jugadores', state.competeSeats)}</select>
+      </label>
+      <label>
+        <span class="menu-label">Rondas</span>
+        <select id="rounds">${countOptions(2, 10, 'rondas', state.competeRounds)}</select>
+      </label>
     </div>
     <button class="primary" id="create-match" type="button">CREAR PARTIDA</button>
   `;
@@ -791,6 +829,17 @@ async function republishBoard() {
   await postBoard(state, false);
 }
 
+function maybeStartSound(match) {
+  const started = Number(match?.startedAt) || 0;
+  if (!started || started === state.heardStart) return;
+  if (Date.now() - started > 8000) {
+    state.heardStart = started;
+    return;
+  }
+  state.heardStart = started;
+  sounds.startMatch();
+}
+
 function showDeparture(text) {
   if (!text) return;
   state.departureNote = text;
@@ -825,6 +874,7 @@ async function refreshMatch() {
   const changed = stamp !== state.matchStamp;
   state.match = next;
   state.matchStamp = stamp;
+  maybeStartSound(next);
   const me = next.players.find((player) => player.userId === state.user?.id);
   if (me?.left || me?.quit) {
     const idle = Boolean(me.idle);
@@ -884,6 +934,7 @@ function leaveMatch(message) {
   state.seenNoticeIds = new Set();
   state.presenceSentAt = 0;
   state.lobbyPulseAt = 0;
+  state.heardStart = 0;
   history.replaceState(null, '', '/');
   render();
 }
@@ -892,7 +943,7 @@ async function beginCompeteRound() {
   const match = state.match;
   const mode = modeById(match.modeId);
   const dictionary = await loadDictionary(mode);
-  state.game = new Game(dictionary, match.skillId, { seed: match.seed, compete: true, modeId: match.modeId });
+  state.game = new Game(dictionary, match.skillId, { seed: match.seed, compete: true, modeId: match.modeId, translate: Boolean(match.translate) });
   state.marksLocked = false;
   state.marksReport = null;
   state.game.start();
@@ -906,6 +957,7 @@ async function beginCompeteRound() {
 async function openMatch(data) {
   state.match = data;
   state.matchStamp = JSON.stringify(data);
+  maybeStartSound(data);
   state.viewPodium = false;
   state.playMode = 'friends';
   state.error = '';
@@ -985,19 +1037,22 @@ function menuHtml() {
       <div class="sheet menu-sheet">
         <header class="menu-hero">
           <img class="game-logo" src="/logo.jpg" alt="Buensoft Zap" />
-          <div>
+          <div class="theme-picker">
+            <p class="menu-label">Color</p>
+            <div class="themes">
+              ${THEMES.map((theme) => `<button class="swatch ${theme.id === state.theme ? 'active' : ''}" data-theme="${theme.id}">${theme.name}</button>`).join('')}
+            </div>
+          </div>
+          <div class="menu-hero-copy">
             <h2>Arma palabras antes de que se acabe el tiempo <span class="version">v${VERSION}</span></h2>
             <p class="hint">${mode.hint} Diez filas de siete letras. El reloj avanza por las filas y cada palabra válida reparte fichas nuevas.</p>
           </div>
         </header>
         ${invitesHtml()}
-        <p class="menu-label">Color</p>
-        <div class="themes">
-          ${THEMES.map((theme) => `<button class="swatch ${theme.id === state.theme ? 'active' : ''}" data-theme="${theme.id}">${theme.name}</button>`).join('')}
-        </div>
-        <div class="play-tabs">
-          <button class="${state.playMode === 'solo' ? 'active' : ''}" data-play="solo" type="button">Solo</button>
-          <button class="${state.playMode === 'friends' ? 'active' : ''} ${state.invites.length ? 'invite-tab' : ''}" data-play="friends" type="button">Con amigos</button>
+        <div class="folder ${state.playMode === 'solo' ? 'is-solo' : 'is-friends'}">
+        <div class="play-tabs" role="tablist">
+          <button class="${state.playMode === 'solo' ? 'active' : ''}" data-play="solo" type="button" role="tab" aria-selected="${state.playMode === 'solo'}">Solo</button>
+          <button class="${state.playMode === 'friends' ? 'active' : ''} ${state.invites.length ? 'invite-tab' : ''}" data-play="friends" type="button" role="tab" aria-selected="${state.playMode === 'friends'}">Con amigos</button>
         </div>
         <div class="menu-grid">
           <section class="menu-setup">
@@ -1006,19 +1061,30 @@ function menuHtml() {
             <div class="choices">${modes}</div>
             <p class="menu-label">Nivel</p>
             <div class="skills">${skills}</div>
-            ${state.playMode === 'solo' ? `<button class="choice ${state.daily ? 'active' : ''}" id="daily">Desafío del día · ${today()}</button>` : ''}
+            ${state.playMode === 'solo' ? `
+              <label class="check-line" for="daily">
+                <input id="daily" type="checkbox" ${state.daily ? 'checked' : ''} />
+                <span>Desafío del día · ${today()}</span>
+              </label>
+            ` : ''}
+            <label class="check-line" for="translate">
+              <input id="translate" type="checkbox" ${state.translate ? 'checked' : ''} />
+              <span>Modo traducción</span>
+            </label>
+            <p class="hint">En modo traducción ves hasta 3 traducciones de palabras que puedes formar. Escribe la palabra en el idioma del tablero.</p>
+            <button class="rules-link" id="rules" type="button">Instrucciones</button>
             ${streakHtml()}
             ${state.playMode === 'friends' ? friendsPanel() : ''}
             ${state.error ? `<p class="hint">${state.error}</p>` : ''}
             <div class="sheet-actions">
-              <button class="ghost" id="rules" type="button">Instrucciones</button>
               ${state.playMode === 'solo' ? '<button class="primary" id="play">JUGAR</button>' : ''}
-              ${state.user ? '<button class="ghost" id="logout" type="button">SALIR</button>' : '<a class="primary google" href="/api/auth/google">Entrar con Google</a>'}
+              ${state.user ? '<button class="ghost" id="logout" type="button">SALIR</button>' : googleLink()}
             </div>
           </section>
           <section class="menu-scores">
             ${state.playMode === 'friends' ? `<h3 class="board-title">Ganadores</h3>${historyHtml(state.history)}` : `<h3 class="board-title">${scoreTitle()}</h3>${scoresHtml()}`}
           </section>
+        </div>
         </div>
       </div>
     </div>
@@ -1240,6 +1306,7 @@ function render() {
       ${game && state.screen !== 'menu' ? `
         <div class="layout">
           <div class="side-col">
+            ${translateHtml(game)}
             <aside class="card meaning">${meaningBlock(game)}</aside>
             ${state.screen === 'play' && !state.match ? `
               <div class="target-bar ${state.recordShown ? 'beaten' : ''}">
@@ -1308,18 +1375,10 @@ function bind() {
   app.querySelectorAll('[data-play]').forEach((button) => {
     button.onclick = () => showPlayMode(button.dataset.play);
   });
-  app.querySelectorAll('[data-seats]').forEach((button) => {
-    button.onclick = () => {
-      state.competeSeats = Number(button.dataset.seats);
-      render();
-    };
-  });
-  app.querySelectorAll('[data-rounds]').forEach((button) => {
-    button.onclick = () => {
-      state.competeRounds = Number(button.dataset.rounds);
-      render();
-    };
-  });
+  const seats = app.querySelector('#seats');
+  if (seats) seats.onchange = () => { state.competeSeats = Number(seats.value); };
+  const rounds = app.querySelector('#rounds');
+  if (rounds) rounds.onchange = () => { state.competeRounds = Number(rounds.value); };
   const createMatch = app.querySelector('#create-match');
   if (createMatch) {
     createMatch.onclick = async () => {
@@ -1331,6 +1390,7 @@ function bind() {
           rounds: state.competeRounds,
           modeId: state.modeId,
           skillId: state.skillId,
+          translate: state.translate,
         }),
       });
       const data = await response.json();
@@ -1395,6 +1455,7 @@ function bind() {
       const response = await fetch(`/api/matches/${state.match.id}/ready`, { method: 'POST' });
       state.match = await response.json();
       state.matchStamp = JSON.stringify(state.match);
+      maybeStartSound(state.match);
       if (state.match.phase === 'playing') await beginCompeteRound();
       else render();
     };
@@ -1460,8 +1521,16 @@ function bind() {
   });
   const daily = app.querySelector('#daily');
   if (daily) {
-    daily.onclick = () => {
-      state.daily = !state.daily;
+    daily.onchange = () => {
+      state.daily = daily.checked;
+      render();
+    };
+  }
+  const translate = app.querySelector('#translate');
+  if (translate) {
+    translate.onchange = () => {
+      state.translate = translate.checked;
+      localStorage.setItem('zap-translate', state.translate ? '1' : '0');
       render();
     };
   }

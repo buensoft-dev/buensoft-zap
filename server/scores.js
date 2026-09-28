@@ -50,6 +50,7 @@ function asEntry(body) {
     mode: cleanName(body.mode) || 'Español → Inglés',
     daily: Boolean(body.daily),
     day: /^\d{4}-\d{2}-\d{2}$/.test(body.day) ? body.day : '',
+    translate: Boolean(body.translate),
   };
 }
 
@@ -96,10 +97,11 @@ async function createPostgres() {
   `);
   await pool.query(`ALTER TABLE scores ADD COLUMN IF NOT EXISTS daily BOOLEAN NOT NULL DEFAULT FALSE`);
   await pool.query(`ALTER TABLE scores ADD COLUMN IF NOT EXISTS day TEXT NOT NULL DEFAULT ''`);
+  await pool.query(`ALTER TABLE scores ADD COLUMN IF NOT EXISTS translate BOOLEAN NOT NULL DEFAULT FALSE`);
   return {
     async list() {
       const result = await pool.query(`
-        SELECT id, name, points, marker, level, skill, mode, daily, day, created_at AS "createdAt"
+        SELECT id, name, points, marker, level, skill, mode, daily, day, translate, created_at AS "createdAt"
         FROM scores
         ORDER BY points DESC, level DESC, created_at ASC
         LIMIT $1
@@ -108,10 +110,10 @@ async function createPostgres() {
     },
     async add(entry) {
       const result = await pool.query(`
-        INSERT INTO scores (name, points, marker, level, skill, mode, daily, day)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-        RETURNING id, name, points, marker, level, skill, mode, daily, day, created_at AS "createdAt"
-      `, [entry.name, entry.points, entry.marker, entry.level, entry.skill, entry.mode, entry.daily, entry.day]);
+        INSERT INTO scores (name, points, marker, level, skill, mode, daily, day, translate)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+        RETURNING id, name, points, marker, level, skill, mode, daily, day, translate, created_at AS "createdAt"
+      `, [entry.name, entry.points, entry.marker, entry.level, entry.skill, entry.mode, entry.daily, entry.day, entry.translate]);
       return result.rows[0];
     },
   };

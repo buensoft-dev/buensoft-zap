@@ -2,6 +2,7 @@ import './style.css';
 import { Game, MODES, SKILLS } from './game.js';
 import { historyHtml, matchHtml, postBoard } from './compete.js';
 
+const VERSION = '1.0.0';
 const app = document.querySelector('#app');
 const cache = new Map();
 
@@ -37,6 +38,7 @@ const state = {
   competeRounds: 2,
   marksLocked: false,
   marksReport: null,
+  rulesOpen: false,
 };
 
 const THEMES = [
@@ -876,7 +878,7 @@ function menuHtml() {
         <header class="menu-hero">
           <img class="game-logo" src="/logo.jpg" alt="Buensoft Zap" />
           <div>
-            <h2>Arma palabras antes de que se acabe el tiempo</h2>
+            <h2>Arma palabras antes de que se acabe el tiempo <span class="version">v${VERSION}</span></h2>
             <p class="hint">${mode.hint} Diez filas de siete letras. El reloj avanza por las filas y cada palabra válida reparte fichas nuevas.</p>
           </div>
         </header>
@@ -901,6 +903,7 @@ function menuHtml() {
             ${state.playMode === 'friends' ? friendsPanel() : ''}
             ${state.error ? `<p class="hint">${state.error}</p>` : ''}
             <div class="sheet-actions">
+              <button class="ghost" id="rules" type="button">Instrucciones</button>
               ${state.playMode === 'solo' ? '<button class="primary" id="play">JUGAR</button>' : ''}
               ${state.user ? '<button class="ghost" id="logout" type="button">SALIR</button>' : '<a class="primary google" href="/api/auth/google">Entrar con Google</a>'}
             </div>
@@ -908,6 +911,43 @@ function menuHtml() {
           <section class="menu-scores">
             ${state.playMode === 'friends' ? `<h3 class="board-title">Ganadores</h3>${historyHtml(state.history)}` : `<h3 class="board-title">${scoreTitle()}</h3>${scoresHtml()}`}
           </section>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function rulesHtml() {
+  return `
+    <div class="overlay rules-overlay">
+      <div class="sheet rules-sheet" role="dialog" aria-labelledby="rules-title">
+        <p class="eyebrow">Cómo se cuentan los puntos</p>
+        <h2 id="rules-title">Instrucciones</h2>
+        <p class="hint">Cada palabra válida suma en el momento en que se acepta. El número verde de la fila es el puntaje de esa palabra. Puntos es la suma de todas.</p>
+        <p class="rules-formula">puntos = nivel × letras × 10 × combo</p>
+        <p class="hint">Después se aplican el ZAP y la fila sorpresa.</p>
+        <h3>Nivel</h3>
+        <table class="rules-table">
+          <tbody>
+            <tr><td>Principiante</td><td>1</td></tr>
+            <tr><td>Intermedio</td><td>2</td></tr>
+            <tr><td>Avanzado</td><td>3</td></tr>
+          </tbody>
+        </table>
+        <p class="hint">Las letras son las de la palabra aceptada. El mínimo para enviarla es 3 y el máximo es 7. El comodín cuenta como una letra de la palabra que el juego resolvió.</p>
+        <h3>Combo</h3>
+        <p class="hint">Empieza en 1. Sube en 1 cada vez que aceptas otra palabra mientras el reloj sigue en la misma fila del tiempo. Si el reloj baja a la fila siguiente antes de tu próxima palabra, el combo vuelve a 1.</p>
+        <p class="hint">En Principiante, una palabra de 4 letras vale 40 con combo 1, 80 con combo 2 y 120 con combo 3. Una de 3 letras con combo 2 vale 60.</p>
+        <h3>ZAP</h3>
+        <p class="hint">Si la palabra llena las 7 casillas, además del cálculo normal se suman nivel × 100. En Principiante, 7 letras y combo 1 valen 170. En Intermedio, la misma palabra vale 340.</p>
+        <h3>Fila sorpresa</h3>
+        <p class="hint">Cada nivel tiene una fila especial. Si vale el doble, se calcula todo lo anterior, incluido el ZAP, y el resultado se multiplica por 2. Cuatro letras en Principiante con combo 1 valen 80. Con combo 3 valen 240.</p>
+        <p class="hint">Si la fila solo suma con 5 letras o más, las palabras de 5, 6 o 7 letras usan el puntaje normal. Con 3 o 4 letras esa fila vale 0.</p>
+        <h3>Lo que no suma</h3>
+        <p class="hint">Una palabra que no está en el diccionario, o que tú ya usaste en esa partida, no se coloca y no suma. Al subir de nivel en solitario el tablero se vacía, el combo vuelve a 1 y los puntos acumulados se conservan.</p>
+        <p class="hint">Entre amigos, al cerrar la ronda, si dos o más jugadores formaron la misma palabra, esa palabra se tacha para todos y vale 0. Las demás se quedan con sus puntos.</p>
+        <div class="sheet-actions">
+          <button class="primary" id="rules-close" type="button">Cerrar</button>
         </div>
       </div>
     </div>
@@ -1076,7 +1116,7 @@ function render() {
           <img class="brand-mark" src="/favicon.png" alt="" />
           <div>
             <span class="eyebrow">${mode.label}</span>
-            <h1>Buensoft Zap</h1>
+            <h1>Buensoft Zap <span class="version">v${VERSION}</span></h1>
           </div>
         </div>
         <div class="stats">
@@ -1104,6 +1144,7 @@ function render() {
       ` : ''}
     </div>
     ${state.screen === 'menu' || state.screen === 'loading' && !game ? menuHtml() : ''}
+    ${state.rulesOpen && state.screen === 'menu' ? rulesHtml() : ''}
     ${state.screen === 'splash' ? splashHtml() : ''}
     ${state.screen === 'review' && game && !state.match ? reviewHtml(game) : ''}
     ${state.screen === 'match' ? matchHtml(state) : ''}
@@ -1140,6 +1181,20 @@ function bind() {
   });
   const play = app.querySelector('#play');
   if (play) play.onclick = beginMatch;
+  const rules = app.querySelector('#rules');
+  if (rules) {
+    rules.onclick = () => {
+      state.rulesOpen = true;
+      render();
+    };
+  }
+  const rulesClose = app.querySelector('#rules-close');
+  if (rulesClose) {
+    rulesClose.onclick = () => {
+      state.rulesOpen = false;
+      render();
+    };
+  }
   app.querySelectorAll('[data-play]').forEach((button) => {
     button.onclick = () => showPlayMode(button.dataset.play);
   });

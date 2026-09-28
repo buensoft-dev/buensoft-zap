@@ -782,6 +782,45 @@ a.google {
   z-index: 5;
 }
 
+.rules-overlay { z-index: 6; }
+
+.rules-sheet {
+  width: min(640px, 100%);
+  text-align: left;
+}
+
+.rules-sheet h2 { margin-bottom: 10px; }
+.rules-sheet h3 {
+  font-family: Outfit, sans-serif;
+  font-size: 15px;
+  font-weight: 700;
+  margin: 16px 0 6px;
+}
+.rules-sheet .hint { margin: 0 0 8px; }
+.rules-formula {
+  margin: 10px 0;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.06);
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+.rules-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 0 0 8px;
+  font-size: 15px;
+}
+.rules-table td {
+  padding: 6px 0;
+  border-bottom: 1px solid var(--line);
+}
+.rules-table td:last-child {
+  text-align: right;
+  font-weight: 700;
+  color: var(--gold-2);
+}
+
 .sheet {
   width: min(920px, 100%);
   background: var(--sheet);
@@ -801,6 +840,17 @@ a.google {
 }
 
 .menu-hero h2 { font-size: 28px; line-height: 1.15; }
+
+.version {
+  font-family: Outfit, sans-serif;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  margin-left: 6px;
+  vertical-align: 0.15em;
+  white-space: nowrap;
+}
 .menu-hero .hint { margin: 8px 0 0; }
 
 .menu-grid {
@@ -1261,6 +1311,46 @@ body:has(.app.is-board) {
   display: grid;
   grid-template-rows: repeat(10, minmax(0, 1fr));
   gap: 4px;
+}
+
+.app.is-board .row {
+  min-height: 0;
+  height: 100%;
+  align-items: stretch;
+  grid-template-columns: 28px minmax(0, 1fr) 56px;
+}
+
+.app.is-board .row-side {
+  width: 56px;
+  min-height: 0;
+  max-height: 100%;
+  justify-content: center;
+  gap: 2px;
+  overflow: hidden;
+}
+
+.app.is-board .points,
+.app.is-board .row-clock,
+.app.is-board .surprise-tag {
+  font-size: 11px;
+  line-height: 1.1;
+  padding: 1px 6px;
+}
+
+.app.is-board .slots {
+  container-type: size;
+  align-self: stretch;
+  height: 100%;
+  min-height: 0;
+  justify-items: stretch;
+  align-items: stretch;
+}
+
+.app.is-board .slot {
+  width: 100%;
+  height: 100%;
+  aspect-ratio: auto;
+  font-size: clamp(12px, 42cqh, 26px);
 }
 
 .app.is-board .tray {

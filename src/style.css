@@ -23,28 +23,28 @@ html[data-theme="neon"] {
   --shadow: 0 24px 60px rgba(20, 0, 60, 0.45);
 }
 
-html[data-theme="ocean"] {
-  --ink: #042f2e;
-  --panel: rgba(8, 68, 66, 0.92);
-  --sheet: #0c3f3c;
-  --line: rgba(224, 255, 250, 0.35);
-  --gold: #ffe08a;
-  --gold-2: #fff4c8;
-  --on-gold: #14221c;
-  --cream: #f3fffc;
-  --muted: #c8f6ee;
-  --good: #c6ffe2;
-  --bad: #ffd0d0;
-  --num: #dffaf4;
-  --tile-ink: #14221c;
-  --tile-edge: #0f766e;
-  --input: #062422;
-  --review: #041716;
-  --chip: #083330;
-  --glow-a: rgba(45, 212, 191, 0.4);
-  --glow-b: rgba(56, 189, 248, 0.35);
-  --glow-c: rgba(255, 224, 138, 0.22);
-  --shadow: 0 24px 60px rgba(0, 30, 28, 0.45);
+html[data-theme="light"] {
+  --ink: #efe6d6;
+  --panel: rgba(255, 250, 243, 0.96);
+  --sheet: #fffaf3;
+  --line: rgba(48, 34, 16, 0.2);
+  --gold: #a86608;
+  --gold-2: #c47f0a;
+  --on-gold: #fffaf3;
+  --cream: #241c14;
+  --muted: #6b5b4b;
+  --good: #0f7a45;
+  --bad: #b4233a;
+  --num: #3a4d78;
+  --tile-ink: #3b1466;
+  --tile-edge: #c2410c;
+  --input: #ffffff;
+  --review: #f7f0e4;
+  --chip: #efe4d0;
+  --glow-a: rgba(255, 196, 120, 0.55);
+  --glow-b: rgba(255, 228, 170, 0.7);
+  --glow-c: rgba(255, 210, 120, 0.35);
+  --shadow: 0 24px 60px rgba(60, 40, 10, 0.14);
 }
 
 html[data-theme="dark"] {
@@ -93,6 +93,54 @@ html[data-theme="sunset"] {
   --glow-b: rgba(244, 63, 94, 0.32);
   --glow-c: rgba(255, 210, 122, 0.22);
   --shadow: 0 24px 60px rgba(40, 0, 10, 0.45);
+}
+
+html[data-theme="forest"] {
+  --ink: #07140c;
+  --panel: rgba(12, 48, 28, 0.92);
+  --sheet: #123524;
+  --line: rgba(220, 255, 226, 0.35);
+  --gold: #d6ff4a;
+  --gold-2: #f3ffb8;
+  --on-gold: #14210a;
+  --cream: #f4fff6;
+  --muted: #c6ecc8;
+  --good: #b6ffd4;
+  --bad: #ffc9cf;
+  --num: #d8ffe4;
+  --tile-ink: #14210a;
+  --tile-edge: #3f6212;
+  --input: #07140c;
+  --review: #06110a;
+  --chip: #0c2418;
+  --glow-a: rgba(120, 220, 80, 0.35);
+  --glow-b: rgba(40, 180, 120, 0.3);
+  --glow-c: rgba(214, 255, 74, 0.2);
+  --shadow: 0 24px 60px rgba(0, 30, 12, 0.45);
+}
+
+html[data-theme="sky"] {
+  --ink: #071428;
+  --panel: rgba(12, 40, 92, 0.92);
+  --sheet: #102a5c;
+  --line: rgba(214, 230, 255, 0.35);
+  --gold: #ffd56a;
+  --gold-2: #fff0c2;
+  --on-gold: #1a1408;
+  --cream: #f4f8ff;
+  --muted: #c9d8f5;
+  --good: #c6ffe2;
+  --bad: #ffd0d8;
+  --num: #d6e6ff;
+  --tile-ink: #102040;
+  --tile-edge: #1d4ed8;
+  --input: #071018;
+  --review: #060e1c;
+  --chip: #0c2044;
+  --glow-a: rgba(80, 140, 255, 0.4);
+  --glow-b: rgba(120, 200, 255, 0.32);
+  --glow-c: rgba(255, 213, 106, 0.2);
+  --shadow: 0 24px 60px rgba(4, 16, 48, 0.45);
 }
 
 body {
@@ -334,7 +382,7 @@ h1 { font-size: 40px; line-height: 0.95; }
   --slot-gap: 5px;
   container-type: inline-size;
   display: grid;
-  grid-template-columns: repeat(7, minmax(0, 1fr));
+  grid-template-columns: repeat(8, minmax(0, 1fr));
   gap: var(--slot-gap);
   align-items: center;
   min-width: 0;
@@ -381,7 +429,7 @@ h1 { font-size: 40px; line-height: 0.95; }
 
 .slot {
   width: 100%;
-  height: min(100%, calc((100cqi - 6 * var(--slot-gap)) / 7 * 0.84));
+  height: min(100%, calc((100cqi - 7 * var(--slot-gap)) / 8 * 0.84));
   min-height: 0;
   display: grid;
   place-items: center;
@@ -928,8 +976,11 @@ a.google:hover { filter: brightness(1.08); }
 .theme-picker .themes {
   display: flex;
   flex: none;
+  flex-wrap: wrap;
+  justify-content: flex-end;
   gap: 8px;
   margin: 0;
+  max-width: 100%;
 }
 .theme-picker .swatch {
   flex: none;
@@ -1196,9 +1247,11 @@ a.google:hover { filter: brightness(1.08); }
   cursor: pointer;
 }
 .swatch[data-theme="neon"] { background: #2a1278; color: #ffe14a; }
-.swatch[data-theme="ocean"] { background: #0c3f3c; color: #ffe08a; }
+.swatch[data-theme="light"] { background: #fffaf3; color: #241c14; border-color: #c8b89a; }
 .swatch[data-theme="sunset"] { background: #4a1522; color: #ffd27a; }
 .swatch[data-theme="dark"] { background: #121214; color: #f4f4f6; border-color: #8a8a94; }
+.swatch[data-theme="forest"] { background: #123524; color: #d6ff4a; }
+.swatch[data-theme="sky"] { background: #102a5c; color: #ffd56a; }
 .swatch.active { border-color: var(--cream); }
 
 .splash-mode {

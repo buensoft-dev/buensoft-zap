@@ -1,5 +1,5 @@
 export const ROWS = 10;
-export const SLOTS = 7;
+export const SLOTS = 8;
 export const TILES = 12;
 export const MIN_LETTERS = 3;
 
@@ -57,7 +57,7 @@ export function shortGloss(entry) {
   const line = raw.split('\n').map((item) => item.trim()).find((item) => (
     item && !item.includes('·') && !/^\([^)]*\)$/.test(item) && !/^(interjection|adverb|adverbio|sustantivo|verbo|masculine|feminine|noun)\b/i.test(item)
   ));
-  return line ? line.split(/[.;]/)[0].trim().slice(0, 48) : '';
+  return line ? line.split(/[.;,]/)[0].trim().slice(0, 48) : '';
 }
 
 export class Game {
@@ -88,6 +88,8 @@ export class Game {
     this.intScore = 0;
     this.wordsCompleted = 0;
     this.pointsTotal = 0;
+    this.priorWords = new Set((options.priorWords || []).map((word) => String(word || '').toUpperCase()).filter(Boolean));
+    this.ownWords = new Set((options.ownWords || []).map((word) => String(word || '').toUpperCase()).filter(Boolean));
     this.used = new Set();
     this.suggested = [];
     this.source = Array.from({ length: TILES }, () => ({ letter: '', hidden: false }));
@@ -212,7 +214,7 @@ export class Game {
   submit() {
     if (!this.canSubmit()) return { ok: false };
     const word = this.resolveWord();
-    if (this.used.has(word)) {
+    if (this.used.has(word) || this.ownWords.has(word)) {
       this.showReject(word, `La palabra "${word}", ya fué utilizada, no se pueden repetir las mismas palabras`);
       return { ok: false };
     }
@@ -386,7 +388,7 @@ export class Game {
     const matches = [];
     for (const letter of ALPHABET) {
       const word = pattern.map((item) => item || letter).join('');
-      if (Object.prototype.hasOwnProperty.call(this.dictionary, word) && !this.used.has(word)) matches.push(word);
+      if (Object.prototype.hasOwnProperty.call(this.dictionary, word) && !this.blocksWord(word)) matches.push(word);
     }
     if (!matches.length) return pattern.map((letter) => letter || 'A').join('');
     return matches[this.pick(matches.length)];
@@ -399,9 +401,8 @@ export class Game {
     this.tipSlot = -1;
 
     let seed = '';
-    const unused = this.words.filter((word) => !this.used.has(word));
-    const pool = unused.length ? unused : this.words;
-    if (pool.length) seed = pool[this.pick(pool.length)];
+    const unused = this.words.filter((word) => !this.used.has(word) && !this.priorWords.has(word) && !this.ownWords.has(word));
+    if (unused.length) seed = unused[this.pick(unused.length)];
     if (seed) this.suggested.push(seed);
 
     const open = () => {
@@ -484,18 +485,19 @@ export class Game {
       .filter(({ tile }) => !tile.hidden && tile.letter);
     const sig = `${visible.map(({ tile }) => (tile.wild ? '*' : tile.letter)).join('')}|${this.used.size}`;
     if (sig === this.previewKey) return this.previewList;
-    const picked = new Map();
+    const glosses = [];
+    const seenGloss = new Set();
     for (const word of this.words) {
-      if (this.used.has(word) || word.length < MIN_LETTERS || word.length > SLOTS) continue;
-      if (picked.has(word.length)) continue;
+      if (this.blocksWord(word) || word.length < MIN_LETTERS || word.length > SLOTS) continue;
       if (!this.assignTiles(word, visible)) continue;
       const gloss = shortGloss(this.dictionary[word]);
-      if (!gloss) continue;
-      picked.set(word.length, gloss);
-      if (picked.size >= 3) break;
+      if (!gloss || seenGloss.has(gloss)) continue;
+      seenGloss.add(gloss);
+      glosses.push(gloss);
+      if (glosses.length >= 3) break;
     }
     this.previewKey = sig;
-    this.previewList = [...picked.values()].slice(0, 3);
+    this.previewList = glosses;
     return this.previewList;
   }
 
@@ -504,18 +506,22 @@ export class Game {
       .map((tile, index) => ({ tile, index }))
       .filter(({ tile }) => !tile.hidden && tile.letter);
     const seed = this.suggested[this.suggested.length - 1];
-    if (seed && !this.used.has(seed)) {
+    if (seed && !this.blocksWord(seed) && !this.priorWords.has(seed)) {
       const seeded = this.assignTiles(seed, visible.filter(({ tile }) => tile.fromSeed));
       if (seeded) return seeded;
     }
     let best = [];
     for (const word of this.words) {
-      if (this.used.has(word) || word.length < MIN_LETTERS || word.length > SLOTS) continue;
+      if (this.blocksWord(word) || word.length < MIN_LETTERS || word.length > SLOTS) continue;
       if (best.length && word.length < best.length) continue;
       const indexes = this.assignTiles(word, visible);
       if (indexes && indexes.length >= best.length) best = indexes;
     }
     return best;
+  }
+
+  blocksWord(word) {
+    return this.used.has(word) || this.ownWords.has(word);
   }
 
   assignTiles(word, tiles) {

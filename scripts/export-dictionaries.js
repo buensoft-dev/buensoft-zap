@@ -21,7 +21,7 @@ for (const [file, outName, label] of sources) {
   const dict = {};
   for (const row of rows) {
     const word = String(row.tword || '').trim().toUpperCase();
-    if (word.length < 1 || word.length > 7 || !letter.test(word)) continue;
+    if (word.length < 1 || word.length > 8 || !letter.test(word)) continue;
     const meaning = String(row.tmeaning || '').replace(/\s+$/g, '').replace(/\n{3,}/g, '\n\n');
     if (!dict[word]) dict[word] = meaning;
   }

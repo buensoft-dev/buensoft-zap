@@ -2,7 +2,7 @@ import './style.css';
 import { Game, MODES, SKILLS } from './game.js';
 import { historyHtml, matchHtml, postBoard } from './compete.js';
 
-const VERSION = '1.2.0';
+const VERSION = '1.4.0';
 const app = document.querySelector('#app');
 const cache = new Map();
 
@@ -22,7 +22,7 @@ const state = {
   daily: true,
   translate: localStorage.getItem('zap-translate') === '1',
   heardStart: 0,
-  theme: localStorage.getItem('zap-theme') || 'neon',
+  theme: (localStorage.getItem('zap-theme') === 'ocean' ? 'light' : localStorage.getItem('zap-theme')) || 'neon',
   targetPoints: 0,
   targetName: '',
   recordShown: false,
@@ -49,9 +49,11 @@ const state = {
 
 const THEMES = [
   { id: 'neon', name: 'Neón' },
-  { id: 'ocean', name: 'Océano' },
+  { id: 'light', name: 'Claro' },
   { id: 'sunset', name: 'Atardecer' },
   { id: 'dark', name: 'Oscuro' },
+  { id: 'forest', name: 'Bosque' },
+  { id: 'sky', name: 'Cielo' },
 ];
 
 function applyTheme() {
@@ -60,6 +62,7 @@ function applyTheme() {
 
 let timerId = 0;
 let flashId = 0;
+const clockIds = new Set();
 let animating = false;
 let recordTimer = 0;
 let matchPoll = 0;
@@ -68,6 +71,8 @@ let noteTimer = 0;
 
 const sounds = {
   ctx: null,
+  tickNodes: [],
+  countdown: false,
   ready() {
     const Audio = window.AudioContext || window.webkitAudioContext;
     if (!Audio) return null;
@@ -77,7 +82,7 @@ const sounds = {
   },
   tone(freq, duration, type = 'square', gain = 0.08) {
     const ctx = this.ready();
-    if (!ctx) return;
+    if (!ctx) return null;
     const osc = ctx.createOscillator();
     const amp = ctx.createGain();
     osc.type = type;
@@ -87,10 +92,25 @@ const sounds = {
     osc.connect(amp).connect(ctx.destination);
     osc.start();
     osc.stop(ctx.currentTime + duration);
+    return osc;
+  },
+  stopTicks() {
+    this.tickNodes.forEach((node) => {
+      try { node.stop(); } catch { /* el pitido ya terminó */ }
+    });
+    this.tickNodes = [];
   },
   tap() { this.tone(640, 0.07, 'square', 0.06); },
   back() { this.tone(240, 0.06, 'sine', 0.05); },
-  tick() { this.tone(920, 0.05, 'square', 0.04); },
+  tick() {
+    if (!this.countdown || state.screen !== 'play' || !state.game?.playing || state.game.over) return;
+    const osc = this.tone(920, 0.05, 'square', 0.04);
+    if (!osc) return;
+    this.tickNodes.push(osc);
+    osc.onended = () => {
+      this.tickNodes = this.tickNodes.filter((item) => item !== osc);
+    };
+  },
   fail() {
     this.tone(180, 0.18, 'sawtooth', 0.05);
     this.tone(110, 0.28, 'square', 0.04);
@@ -154,19 +174,29 @@ async function loadDictionary(mode) {
 }
 
 function stopClocks() {
+  sounds.countdown = false;
+  clockIds.forEach((id) => clearInterval(id));
+  clockIds.clear();
   clearInterval(timerId);
   clearInterval(flashId);
   timerId = 0;
   flashId = 0;
   state.flashOn = false;
+  sounds.stopTicks();
 }
 
 function startClocks() {
   stopClocks();
+  sounds.countdown = true;
   timerId = setInterval(() => {
-    const result = state.game.tick();
-    if (result.ended) {
+    if (!state.game || state.screen !== 'play') {
       stopClocks();
+      return;
+    }
+    const result = state.game.tick();
+    if (result.ended || !state.game.playing || state.game.over) {
+      stopClocks();
+      if (!result.ended) return;
       if (state.match) {
         postBoard(state, true).then(() => {
           state.screen = 'match';
@@ -197,6 +227,8 @@ function startClocks() {
     const num = app.querySelector('.num.live');
     if (num) num.classList.toggle('flash', state.flashOn);
   }, 180);
+  clockIds.add(timerId);
+  clockIds.add(flashId);
 }
 
 async function refreshScores() {
@@ -369,7 +401,10 @@ function finishSubmit() {
   else if (result.ok) sounds.win();
   else sounds.fail();
   if (result.ok) celebrateRecord();
-  if (result.finished || state.game.over) lockMarks(state.game);
+  if (result.finished || state.game.over) {
+    stopClocks();
+    lockMarks(state.game);
+  }
   if (state.match) {
     postBoard(state, Boolean(result.finished)).then(() => {
       if (result.finished || state.match?.phase === 'review') {
@@ -418,11 +453,6 @@ function onKey(event) {
     return;
   }
   if (key === ' ') {
-    event.preventDefault();
-    if (state.game.canSubmit()) onSubmit();
-    return;
-  }
-  if (key === 'Enter') {
     if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement) return;
     event.preventDefault();
     const index = state.game.source.findIndex((tile) => !tile.hidden && tile.wild);
@@ -432,6 +462,12 @@ function onKey(event) {
       sounds.tap();
       render();
     }
+    return;
+  }
+  if (key === 'Enter') {
+    if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement) return;
+    event.preventDefault();
+    if (state.game.canSubmit()) onSubmit();
     return;
   }
   if (/^[a-zA-ZñÑ]$/.test(key)) {
@@ -659,7 +695,7 @@ function boardHtml(game) {
             ${tipButton(game)}
             <div class="tiles">${tiles}</div>
           </div>
-          <p class="keys">Clic o teclado · Retroceso quita la última · Esc borra la fila · Espacio comprueba · Enter coloca el comodín</p>
+          <p class="keys">Clic o teclado · Retroceso quita la última · Esc borra la fila · Espacio coloca el comodín · Enter comprueba</p>
           ${game.tipped?.size ? '<p class="tip-note">El foco marcó las fichas de una palabra.</p>' : ''}
         </div>
         ${game.over
@@ -943,7 +979,14 @@ async function beginCompeteRound() {
   const match = state.match;
   const mode = modeById(match.modeId);
   const dictionary = await loadDictionary(mode);
-  state.game = new Game(dictionary, match.skillId, { seed: match.seed, compete: true, modeId: match.modeId, translate: Boolean(match.translate) });
+  state.game = new Game(dictionary, match.skillId, {
+    seed: match.seed,
+    compete: true,
+    modeId: match.modeId,
+    translate: Boolean(match.translate),
+    priorWords: match.playedWords || [],
+    ownWords: match.myWords || [],
+  });
   state.marksLocked = false;
   state.marksReport = null;
   state.game.start();
@@ -1045,7 +1088,7 @@ function menuHtml() {
           </div>
           <div class="menu-hero-copy">
             <h2>Arma palabras antes de que se acabe el tiempo <span class="version">v${VERSION}</span></h2>
-            <p class="hint">${mode.hint} Diez filas de siete letras. El reloj avanza por las filas y cada palabra válida reparte fichas nuevas.</p>
+            <p class="hint">${mode.hint} Diez filas de ocho letras. El reloj avanza por las filas y cada palabra válida reparte fichas nuevas.</p>
           </div>
         </header>
         ${invitesHtml()}
@@ -1108,15 +1151,15 @@ function rulesHtml() {
             <tr><td>Avanzado</td><td>3</td></tr>
           </tbody>
         </table>
-        <p class="hint">Las letras son las de la palabra aceptada. El mínimo para enviarla es 3 y el máximo es 7. El comodín cuenta como una letra de la palabra que el juego resolvió.</p>
+        <p class="hint">Las letras son las de la palabra aceptada. El mínimo para enviarla es 3 y el máximo es 8. El comodín cuenta como una letra de la palabra que el juego resolvió.</p>
         <h3>Combo</h3>
         <p class="hint">Empieza en 1. Sube en 1 cada vez que aceptas otra palabra mientras el reloj sigue en la misma fila del tiempo. Si el reloj baja a la fila siguiente antes de tu próxima palabra, el combo vuelve a 1.</p>
         <p class="hint">En Principiante, una palabra de 4 letras vale 40 con combo 1, 80 con combo 2 y 120 con combo 3. Una de 3 letras con combo 2 vale 60.</p>
         <h3>ZAP</h3>
-        <p class="hint">Si la palabra llena las 7 casillas, además del cálculo normal se suman nivel × 100. En Principiante, 7 letras y combo 1 valen 170. En Intermedio, la misma palabra vale 340.</p>
+        <p class="hint">Si la palabra llena las 8 casillas, además del cálculo normal se suman nivel × 100. En Principiante, 8 letras y combo 1 valen 180. En Intermedio, la misma palabra vale 360.</p>
         <h3>Fila sorpresa</h3>
         <p class="hint">Cada nivel tiene una fila especial. Si vale el doble, se calcula todo lo anterior, incluido el ZAP, y el resultado se multiplica por 2. Cuatro letras en Principiante con combo 1 valen 80. Con combo 3 valen 240.</p>
-        <p class="hint">Si la fila solo suma con 5 letras o más, las palabras de 5, 6 o 7 letras usan el puntaje normal. Con 3 o 4 letras esa fila vale 0.</p>
+        <p class="hint">Si la fila solo suma con 5 letras o más, las palabras de 5, 6, 7 u 8 letras usan el puntaje normal. Con 3 o 4 letras esa fila vale 0.</p>
         <h3>Lo que no suma</h3>
         <p class="hint">Una palabra que no está en el diccionario, o que tú ya usaste en esa partida, no se coloca y no suma. Al subir de nivel en solitario el tablero se vacía, el combo vuelve a 1 y los puntos acumulados se conservan.</p>
         <p class="hint">Entre amigos, al cerrar la ronda, si dos o más jugadores formaron la misma palabra, esa palabra se tacha para todos y vale 0. Las demás se quedan con sus puntos.</p>
@@ -1275,6 +1318,7 @@ function slideHighlight(from) {
 }
 
 function render() {
+  if (state.screen !== 'play') stopClocks();
   const glideFrom = captureGlide();
   const overlay = app.querySelector('.overlay');
   const keepOverlay = overlay ? overlay.scrollTop : 0;

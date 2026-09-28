@@ -126,6 +126,21 @@ function beginPlaying(match, room) {
   });
 }
 
+function rememberPlayed(match) {
+  const all = new Set(Array.isArray(match.playedWords) ? match.playedWords : []);
+  for (const player of match.players) {
+    const mine = new Set(Array.isArray(player.playedWords) ? player.playedWords : []);
+    for (const item of player.board?.words || []) {
+      const word = String(item.word || '').toUpperCase();
+      if (!word) continue;
+      mine.add(word);
+      all.add(word);
+    }
+    player.playedWords = [...mine];
+  }
+  match.playedWords = [...all];
+}
+
 function tryAdvance(match) {
   const room = activePlayers(match);
   const host = room.find((item) => item.userId === match.hostId);
@@ -135,6 +150,7 @@ function tryAdvance(match) {
     return;
   }
   if (match.phase === 'review' && room.length >= 1 && room.every((item) => item.ready)) {
+    rememberPlayed(match);
     match.players.forEach((item) => {
       item.total += item.roundScore || 0;
       item.roundScore = 0;
@@ -186,14 +202,14 @@ function cleanBoard(body, dict, skillId) {
   for (const item of body?.words || []) {
     const word = String(item.word || '').toUpperCase().replace(/[^A-ZÑ]/g, '');
     if (!word || seen.has(word) || !Object.prototype.hasOwnProperty.call(dict, word)) continue;
-    if (word.length < 3 || word.length > 7) continue;
+    if (word.length < 3 || word.length > 8) continue;
     seen.add(word);
     const claimed = Number(item.points) || 0;
     const max = (skillId * word.length * 10 * 10 + skillId * 100) * 2;
     words.push({ word, points: Math.max(0, Math.min(claimed, max)) });
   }
   const grid = Array.isArray(body?.grid) ? body.grid.slice(0, 10).map((row) => (
-    Array.isArray(row) ? row.slice(0, 7).map((letter) => String(letter || '').slice(0, 1).toUpperCase()) : []
+    Array.isArray(row) ? row.slice(0, 8).map((letter) => String(letter || '').slice(0, 1).toUpperCase()) : []
   )) : [];
   return { words, grid };
 }
@@ -257,6 +273,8 @@ function publicMatch(match, userId) {
     round: match.round,
     phase: match.phase,
     seed: match.seed,
+    playedWords: match.playedWords || [],
+    myWords: (match.players.find((player) => player.userId === userId)?.playedWords) || [],
     finisher: match.finisher,
     you: userId || '',
     invites: match.invites,
@@ -683,6 +701,7 @@ export function matchRoutes(app) {
         match.finisher = null;
         match.seed = '';
         match.savedHistory = false;
+        match.playedWords = [];
         match.createdAt = new Date().toISOString();
         const now = Date.now();
         room.forEach((item) => {
@@ -692,6 +711,7 @@ export function matchRoutes(app) {
           item.total = 0;
           item.roundScore = 0;
           item.board = null;
+          item.playedWords = [];
           item.lastSeen = now;
         });
       }

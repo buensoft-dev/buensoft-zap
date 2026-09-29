@@ -2,7 +2,7 @@ import './style.css';
 import { Game, MODES, SKILLS } from './game.js';
 import { historyHtml, matchHtml, postBoard } from './compete.js';
 
-const VERSION = '1.4.1';
+const VERSION = '1.5.0';
 const app = document.querySelector('#app');
 const cache = new Map();
 
@@ -45,6 +45,14 @@ const state = {
   departureNote: '',
   presenceSentAt: 0,
   lobbyPulseAt: 0,
+  youIdleMs: 0,
+  idleCheckedAt: Date.now(),
+  lastActivityAt: Date.now(),
+  idleClockReady: false,
+  idleWarn: false,
+  idleWarnMs: 120000,
+  savingScore: false,
+  reviewTab: 'used',
 };
 
 const THEMES = [
@@ -68,17 +76,28 @@ let recordTimer = 0;
 let matchPoll = 0;
 let invitePoll = 0;
 let noteTimer = 0;
+let idleWatch = 0;
 
 const sounds = {
   ctx: null,
   tickNodes: [],
+  active: [],
   countdown: false,
+  silenced: false,
   ready() {
+    if (this.silenced) return null;
     const Audio = window.AudioContext || window.webkitAudioContext;
     if (!Audio) return null;
     if (!this.ctx) this.ctx = new Audio();
     if (this.ctx.state === 'suspended') this.ctx.resume();
     return this.ctx;
+  },
+  track(node) {
+    this.active.push(node);
+    node.onended = () => {
+      this.active = this.active.filter((item) => item !== node);
+    };
+    return node;
   },
   tone(freq, duration, type = 'square', gain = 0.08) {
     const ctx = this.ready();
@@ -92,7 +111,7 @@ const sounds = {
     osc.connect(amp).connect(ctx.destination);
     osc.start();
     osc.stop(ctx.currentTime + duration);
-    return osc;
+    return this.track(osc);
   },
   stopTicks() {
     this.tickNodes.forEach((node) => {
@@ -100,10 +119,24 @@ const sounds = {
     });
     this.tickNodes = [];
   },
+  stopAll() {
+    this.silenced = true;
+    this.countdown = false;
+    this.stopTicks();
+    this.active.forEach((node) => {
+      try { node.stop(); } catch { /* el sonido ya terminó */ }
+    });
+    this.active = [];
+    if (this.ctx && this.ctx.state === 'running') this.ctx.suspend();
+  },
+  unsilence() {
+    this.silenced = false;
+    if (this.ctx && this.ctx.state === 'suspended') this.ctx.resume();
+  },
   tap() { this.tone(640, 0.07, 'square', 0.06); },
   back() { this.tone(240, 0.06, 'sine', 0.05); },
   tick() {
-    if (!this.countdown || state.screen !== 'play' || !state.game?.playing || state.game.over) return;
+    if (this.silenced || !this.countdown || state.screen !== 'play' || !state.game?.playing || state.game.over) return;
     const osc = this.tone(920, 0.05, 'square', 0.04);
     if (!osc) return;
     this.tickNodes.push(osc);
@@ -138,6 +171,7 @@ const sounds = {
     amp.gain.value = 0.18;
     noise.connect(amp).connect(ctx.destination);
     noise.start();
+    this.track(noise);
     this.tone(90, 0.16, 'sine', 0.1);
   },
   record() {
@@ -187,6 +221,7 @@ function stopClocks() {
 
 function startClocks() {
   stopClocks();
+  sounds.unsilence();
   sounds.countdown = true;
   timerId = setInterval(() => {
     if (!state.game || state.screen !== 'play') {
@@ -204,14 +239,7 @@ function startClocks() {
         });
         return;
       }
-      state.screen = 'review';
-      state.selectedWord = state.game.suggested[0] || '';
-      state.savedId = null;
-      lockMarks(state.game);
-      refreshScores().then(() => {
-        if (state.screen === 'review') render();
-      });
-      render();
+      openSoloReview();
       return;
     }
     const rowLeft = state.game.rowSeconds[state.game.timerRow];
@@ -241,45 +269,80 @@ async function refreshScores() {
   }
 }
 
-async function saveScore(event) {
+function openSoloReview() {
+  sounds.stopAll();
+  state.screen = 'review';
+  state.reviewTab = 'used';
+  state.selectedWord = firstReviewWord(state.game);
+  state.savedId = null;
+  state.saveError = '';
+  state.savingScore = false;
+  lockMarks(state.game);
+  if (state.user) {
+    persistScore();
+    return;
+  }
+  render();
+  refreshScores().then(() => {
+    if (state.screen === 'review') render();
+  });
+}
+
+async function persistScore() {
+  if (!state.user || !state.game || state.savedId || state.savingScore) return;
+  const name = playerName(state.user.name).trim();
+  state.playerName = name;
+  if (!name.replace(/ /g, '')) {
+    state.saveError = 'El nombre de Google no tiene letras válidas';
+    state.savingScore = false;
+    render();
+    return;
+  }
+  state.savingScore = true;
+  state.saveError = '';
+  render();
+  try {
+    const response = await fetch('/api/scores', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: state.user?.name || name,
+        points: state.game.pointsTotal,
+        marker: state.game.marker,
+        level: state.game.level,
+        skill: state.game.skill.name,
+        mode: modeById(state.modeId).label,
+        daily: state.daily,
+        day: state.daily ? today() : '',
+        translate: Boolean(state.game?.translate),
+      }),
+    });
+    const data = await response.json();
+    state.savingScore = false;
+    if (!response.ok) {
+      state.saveError = data.error || 'No se pudo guardar';
+      render();
+      return;
+    }
+    state.savedId = data.saved.id;
+    state.scores = data.scores;
+    state.saveError = '';
+    render();
+  } catch {
+    state.savingScore = false;
+    state.saveError = 'No se pudo guardar';
+    render();
+  }
+}
+
+function saveScore(event) {
   event.preventDefault();
   if (!state.user) {
     state.saveError = 'Entra con Google para guardar el puntaje';
     render();
     return;
   }
-  const name = playerName(state.user.name).trim();
-  state.playerName = name;
-  if (!name.replace(/ /g, '')) {
-    state.saveError = 'El nombre de Google no tiene letras válidas';
-    render();
-    return;
-  }
-  const response = await fetch('/api/scores', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      name: state.user?.name || name,
-      points: state.game.pointsTotal,
-      marker: state.game.marker,
-      level: state.game.level,
-      skill: state.game.skill.name,
-      mode: modeById(state.modeId).label,
-      daily: state.daily,
-      day: state.daily ? today() : '',
-      translate: Boolean(state.game?.translate),
-    }),
-  });
-  const data = await response.json();
-  if (!response.ok) {
-    state.saveError = data.error || 'No se pudo guardar';
-    render();
-    return;
-  }
-  state.savedId = data.saved.id;
-  state.scores = data.scores;
-  state.saveError = '';
-  render();
+  persistScore();
 }
 
 function captureTarget() {
@@ -369,9 +432,55 @@ function paintHud() {
   return true;
 }
 
-function notePlayActivity() {
-  if (!state.match?.id || state.screen !== 'play') return;
+function noteServerIdle(idleMs, warnMs) {
+  const idle = Math.max(0, Number(idleMs) || 0);
   const now = Date.now();
+  state.youIdleMs = idle;
+  state.idleCheckedAt = now;
+  if (Number(warnMs) > 0) state.idleWarnMs = Number(warnMs);
+  if (!state.idleClockReady) {
+    state.lastActivityAt = now - idle;
+    state.idleClockReady = true;
+    return;
+  }
+  const localIdle = now - state.lastActivityAt;
+  if (idle + 3000 < localIdle) state.lastActivityAt = now - idle;
+}
+
+function idleElapsed() {
+  const local = Date.now() - (state.lastActivityAt || Date.now());
+  const server = (state.youIdleMs || 0) + (Date.now() - (state.idleCheckedAt || Date.now()));
+  return Math.min(local, server);
+}
+
+function shouldIdleWarn() {
+  if (!state.match?.id || (state.screen !== 'play' && state.screen !== 'match')) return false;
+  const phase = state.match.phase;
+  if (!['lobby', 'playing', 'review'].includes(phase)) return false;
+  const me = state.match.players?.find((player) => player.userId === state.user?.id);
+  if (!me || me.left || me.quit) return false;
+  if (phase === 'review' && me.ready) return false;
+  return idleElapsed() >= (state.idleWarnMs || 120000);
+}
+
+function watchIdle() {
+  clearInterval(idleWatch);
+  idleWatch = setInterval(() => {
+    const warn = shouldIdleWarn();
+    if (warn === state.idleWarn) return;
+    state.idleWarn = warn;
+    if (state.screen === 'play' || state.screen === 'match') render();
+  }, 1000);
+}
+
+function notePlayActivity() {
+  if (!state.match?.id || (state.screen !== 'play' && state.screen !== 'match')) return;
+  const now = Date.now();
+  state.lastActivityAt = now;
+  if (state.idleWarn) {
+    state.idleWarn = false;
+    document.querySelector('.idle-warn')?.remove();
+  }
   if (now - state.presenceSentAt < 2000) return;
   state.presenceSentAt = now;
   fetch(`/api/matches/${state.match.id}/pulse`, { method: 'POST' }).catch(() => {});
@@ -765,7 +874,7 @@ function accountHtml() {
 
 function saveFormHtml(game) {
   if (state.savedId) {
-    return `<p class="saved">Puntuación de <strong>${escapeHtml(state.playerName)}</strong> guardada: ${game.pointsTotal} puntos.</p>`;
+    return `<p class="saved">Tu puntuación de <strong>${game.pointsTotal}</strong> puntos ya se guardó como <strong>${escapeHtml(state.playerName || state.user?.name || '')}</strong>.</p>`;
   }
   if (!state.user) {
     return `
@@ -774,9 +883,12 @@ function saveFormHtml(game) {
       ${state.saveError ? `<p class="hint bad-note">${escapeHtml(state.saveError)}</p>` : ''}
     `;
   }
+  if (state.savingScore) {
+    return `<p>Tu puntuación es <strong>${game.pointsTotal}</strong> puntos. Guardando…</p>`;
+  }
   return `
     <form id="save-score" class="save-score">
-      <p>Tu puntuación es <strong>${game.pointsTotal}</strong> puntos y se guardará como <strong>${escapeHtml(state.user.name)}</strong>.</p>
+      <p>Tu puntuación es <strong>${game.pointsTotal}</strong> puntos. No se pudo guardar automáticamente.</p>
       <button class="primary" type="submit">GUARDAR SCORE</button>
     </form>
     ${state.saveError ? `<p class="hint bad-note">${escapeHtml(state.saveError)}</p>` : ''}
@@ -910,6 +1022,7 @@ async function refreshMatch() {
   const changed = stamp !== state.matchStamp;
   state.match = next;
   state.matchStamp = stamp;
+  noteServerIdle(next.youIdleMs, next.idleWarnMs);
   maybeStartSound(next);
   const me = next.players.find((player) => player.userId === state.user?.id);
   if (me?.left || me?.quit) {
@@ -971,6 +1084,11 @@ function leaveMatch(message) {
   state.presenceSentAt = 0;
   state.lobbyPulseAt = 0;
   state.heardStart = 0;
+  state.idleWarn = false;
+  state.idleClockReady = false;
+  state.youIdleMs = 0;
+  state.lastActivityAt = Date.now();
+  state.idleCheckedAt = Date.now();
   history.replaceState(null, '', '/');
   render();
 }
@@ -1236,11 +1354,74 @@ function marksHtml() {
   `;
 }
 
-function reviewHtml(game) {
-  const buttons = game.suggested.map((word) => `
-    <button class="${word === state.selectedWord ? 'active' : ''}" data-review="${escapeHtml(word)}">${escapeHtml(word)}</button>
-  `).join('');
+function shownRacks(game) {
+  return (game.racks || []).filter((rack) => rack.shown);
+}
+
+function rackAlternatives(game, rack) {
+  return game.wordsForRack(rack)
+    .filter((word) => word !== rack.played)
+    .sort((a, b) => b.length - a.length || a.localeCompare(b, 'es'))
+    .slice(0, 2);
+}
+
+function firstReviewWord(game) {
+  const racks = shownRacks(game);
+  const wrote = racks.find((rack) => rack.played);
+  if (wrote) return wrote.played;
+  for (const rack of racks) {
+    const alternative = rackAlternatives(game, rack)[0];
+    if (alternative) return alternative;
+  }
+  return '';
+}
+
+function reviewWordButton(word) {
+  return `<button type="button" class="${word === state.selectedWord ? 'active' : ''}" data-review="${escapeHtml(word)}">${escapeHtml(word)}</button>`;
+}
+
+function reviewWordsHtml(game) {
   const meaning = state.selectedWord ? game.dictionary[state.selectedWord] || '' : '';
+  const rows = shownRacks(game).map((rack) => {
+    const letters = rack.letters.map((tile) => `<span>${escapeHtml(tile.wild ? '★' : tile.letter)}</span>`).join('');
+    const wrote = rack.played ? reviewWordButton(rack.played) : '<span class="vocab-empty">—</span>';
+    const alternatives = rackAlternatives(game, rack).map((word) => reviewWordButton(word)).join('');
+    return `
+      <tr>
+        <td><div class="vocab-letters">${letters}</div></td>
+        <td>${wrote}</td>
+        <td><div class="vocab-alts">${alternatives || '<span class="vocab-empty">—</span>'}</div></td>
+      </tr>
+    `;
+  }).join('');
+  return `
+    <h2>Expande tu vocabulario</h2>
+    <div class="vocab-layout">
+      <div class="vocab-table-wrap">
+        <table class="vocab-table">
+          <thead>
+            <tr>
+              <th>Letras disponibles</th>
+              <th>Escribiste</th>
+              <th>Alternativas</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${rows || '<tr><td colspan="3">No hay rondas para mostrar.</td></tr>'}
+          </tbody>
+        </table>
+      </div>
+      <div class="review-detail">
+        ${state.selectedWord ? `
+          <h3>${escapeHtml(state.selectedWord)}</h3>
+          <pre>${escapeHtml(meaning)}</pre>
+        ` : '<p class="hint">Elige una palabra para ver su significado.</p>'}
+      </div>
+    </div>
+  `;
+}
+
+function reviewHtml(game) {
   return `
     <div class="overlay">
       <div class="sheet">
@@ -1252,13 +1433,7 @@ function reviewHtml(game) {
         ${marksHtml()}
         <h3 class="board-title">${scoreTitle()}</h3>
         ${scoresHtml()}
-        <h2>Expande tu vocabulario</h2>
-        <p class="hint">Durante todo el juego tuviste la opción de utilizar las siguientes palabras:</p>
-        <div class="review-list">${buttons}</div>
-        <div class="review-detail">
-          <h3>${escapeHtml(state.selectedWord)}</h3>
-          <pre>${escapeHtml(meaning)}</pre>
-        </div>
+        ${reviewWordsHtml(game)}
         <div class="sheet-actions">
           ${nearGap(game) ? '' : '<button class="ghost" id="again" type="button">Jugar de nuevo</button>'}
           <button class="primary" id="home">Página principal</button>
@@ -1322,9 +1497,12 @@ function slideHighlight(from) {
 
 function render() {
   if (state.screen !== 'play') stopClocks();
+  if (state.screen === 'review') sounds.stopAll();
   const glideFrom = captureGlide();
   const overlay = app.querySelector('.overlay');
+  const tableWrap = app.querySelector('.vocab-table-wrap');
   const keepOverlay = overlay ? overlay.scrollTop : 0;
+  const keepTable = tableWrap ? tableWrap.scrollTop : 0;
   const keepWindow = window.scrollY;
   const game = state.game;
   const skill = game ? game.skill : skillById(state.skillId);
@@ -1372,6 +1550,7 @@ function render() {
     ${state.screen === 'splash' ? splashHtml() : ''}
     ${state.screen === 'review' && game && !state.match ? reviewHtml(game) : ''}
     ${state.screen === 'match' ? matchHtml(state) : ''}
+    ${state.idleWarn ? '<div class="idle-warn" role="alert"><p>Llevas 2 minutos sin actividad. Si no vuelves al juego, en un minuto se te sacará de la partida.</p></div>' : ''}
     ${state.recordFlash && game ? `
       <div class="record-flash" aria-live="polite">
         <div>
@@ -1384,9 +1563,15 @@ function render() {
   bind();
   followRow();
   slideHighlight(glideFrom);
-  const nextOverlay = app.querySelector('.overlay');
-  if (nextOverlay && keepOverlay) nextOverlay.scrollTop = keepOverlay;
-  if (keepWindow) window.scrollTo(0, keepWindow);
+  const applyScroll = () => {
+    const nextOverlay = app.querySelector('.overlay');
+    const nextTable = app.querySelector('.vocab-table-wrap');
+    if (nextOverlay) nextOverlay.scrollTop = keepOverlay;
+    if (nextTable) nextTable.scrollTop = keepTable;
+    if (keepWindow) window.scrollTo(0, keepWindow);
+  };
+  applyScroll();
+  requestAnimationFrame(applyScroll);
 }
 
 function bind() {
@@ -1617,12 +1802,28 @@ function bind() {
     };
   }
 
+  app.querySelectorAll('[data-review-tab]').forEach((button) => {
+    button.onclick = () => {
+      state.reviewTab = 'used';
+      const used = state.game?.played || [];
+      if (used.length && !used.includes(state.selectedWord)) state.selectedWord = used[0];
+      render();
+    };
+  });
   app.querySelectorAll('[data-review]').forEach((button) => {
     button.onclick = () => {
       state.selectedWord = button.dataset.review;
       render();
     };
   });
+  const idleWarn = app.querySelector('.idle-warn');
+  if (idleWarn) {
+    idleWarn.onpointerdown = (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      notePlayActivity();
+    };
+  }
   const exitGameButton = app.querySelector('#exit-game');
   if (exitGameButton) exitGameButton.onclick = exitGame;
   const goHome = () => {
@@ -1690,4 +1891,6 @@ Promise.all([
 });
 
 window.addEventListener('pointerdown', () => sounds.ready(), { once: true });
+window.addEventListener('pointerdown', () => notePlayActivity());
+watchIdle();
 window.addEventListener('keydown', onKey);

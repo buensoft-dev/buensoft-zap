@@ -53,7 +53,8 @@ function code() {
   return crypto.randomBytes(4).toString('hex');
 }
 
-const IDLE_MS = 60 * 1000;
+const IDLE_WARN_MS = 2 * 60 * 1000;
+const IDLE_MS = 3 * 60 * 1000;
 const MATCH_COOKIE = 'zap_match';
 
 function activePlayers(match) {
@@ -257,6 +258,14 @@ function liveScores(match) {
   return scores;
 }
 
+function youIdleMs(match, userId) {
+  const player = match.players.find((item) => item.userId === userId);
+  if (!player || player.left || player.quit) return 0;
+  if (!['lobby', 'playing', 'review'].includes(match.phase)) return 0;
+  if (match.phase === 'review' && player.ready) return 0;
+  return Math.max(0, Date.now() - Number(player.lastSeen || Date.now()));
+}
+
 function publicMatch(match, userId) {
   const ranked = standings(match);
   const live = liveScores(match);
@@ -279,6 +288,8 @@ function publicMatch(match, userId) {
     you: userId || '',
     invites: match.invites,
     notices: Array.isArray(match.notices) ? match.notices.slice(-8) : [],
+    youIdleMs: youIdleMs(match, userId),
+    idleWarnMs: IDLE_WARN_MS,
     players: ranked.map((player, index) => ({
       userId: player.userId,
       name: player.name,
@@ -765,7 +776,7 @@ export function matchRoutes(app) {
       const match = await updateMatch(req.params.id, (current) => {
         const player = current.players.find((item) => item.userId === user.id && !item.left && !item.quit);
         let touched = false;
-        if (player && (current.phase === 'lobby' || current.phase === 'playing')) {
+        if (player && (current.phase === 'lobby' || current.phase === 'playing' || current.phase === 'review')) {
           player.lastSeen = Date.now();
           touched = true;
         }

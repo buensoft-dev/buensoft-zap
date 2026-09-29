@@ -91,6 +91,8 @@ export class Game {
     this.priorWords = new Set((options.priorWords || []).map((word) => String(word || '').toUpperCase()).filter(Boolean));
     this.ownWords = new Set((options.ownWords || []).map((word) => String(word || '').toUpperCase()).filter(Boolean));
     this.used = new Set();
+    this.played = [];
+    this.racks = [];
     this.suggested = [];
     this.source = Array.from({ length: TILES }, () => ({ letter: '', hidden: false }));
     this.grid = Array.from({ length: ROWS }, () => Array.from({ length: SLOTS }, emptyCell));
@@ -137,6 +139,7 @@ export class Game {
     this.playing = true;
     this.secondsLeft = this.masterTime();
     this.warning = '';
+    this.markRackShown();
   }
 
   masterTime() {
@@ -241,6 +244,7 @@ export class Game {
     });
 
     this.used.add(word);
+    this.played.push(word);
     this.wordsCompleted += 1;
     this.intScore += length + 1;
     let points = this.skill.id * length * 10 * this.combo + (zap ? this.skill.id * 100 : 0);
@@ -270,16 +274,20 @@ export class Game {
 
     this.playerRow += 1;
     this.secondsLeft = this.masterTime();
+    const rack = this.racks[this.racks.length - 1];
+    if (rack) rack.played = word;
     this.deal();
 
     if (this.playerRow >= ROWS) {
       if (this.compete) {
+        this.racks.pop();
         this.playing = false;
         this.over = true;
         return { ok: true, zap, combo: this.combo, finished: true };
       }
       return { ok: true, zap, combo: this.combo, levelUp: this.advanceLevel() };
     }
+    this.markRackShown();
     return { ok: true, zap, combo: this.combo };
   }
 
@@ -306,6 +314,7 @@ export class Game {
   advanceLevel() {
     this.playing = false;
     this.level += 1;
+    if (this.racks.length) this.racks[this.racks.length - 1].level = this.level;
     if (this.secsPerSlot > 5) this.secsPerSlot -= 1;
     this.grid = Array.from({ length: ROWS }, () => Array.from({ length: SLOTS }, emptyCell));
     this.numberColors = Array.from({ length: ROWS }, () => 'idle');
@@ -338,7 +347,13 @@ export class Game {
   resumeAfterLevel() {
     this.playing = true;
     this.secondsLeft = this.masterTime();
+    this.markRackShown();
     this.paintTimer();
+  }
+
+  markRackShown() {
+    const rack = this.racks[this.racks.length - 1];
+    if (rack) rack.shown = true;
   }
 
   paintTimer() {
@@ -441,6 +456,14 @@ export class Game {
       this.source[index].letter = '★';
       this.source[index].wild = true;
     }
+
+    this.racks.push({
+      level: this.level,
+      letters: this.source.map((tile) => ({ letter: tile.letter, wild: Boolean(tile.wild) })),
+      blocked: [...this.used, ...this.priorWords, ...this.ownWords],
+      played: '',
+      shown: false,
+    });
   }
 
   useTip() {
@@ -518,6 +541,24 @@ export class Game {
       if (indexes && indexes.length >= best.length) best = indexes;
     }
     return best;
+  }
+
+  wordsForRack(rack) {
+    if (!rack) return [];
+    if (rack.possible) return rack.possible;
+    const blocked = new Set(rack.blocked || []);
+    const tiles = (rack.letters || []).map((tile, index) => ({
+      tile: { letter: tile.letter, wild: Boolean(tile.wild), hidden: false },
+      index,
+    }));
+    const found = [];
+    for (const word of this.words) {
+      if (blocked.has(word) || word.length < MIN_LETTERS || word.length > SLOTS) continue;
+      if (this.assignTiles(word, tiles)) found.push(word);
+    }
+    found.sort();
+    rack.possible = found;
+    return found;
   }
 
   blocksWord(word) {

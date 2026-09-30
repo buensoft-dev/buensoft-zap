@@ -132,6 +132,7 @@ export class Game {
       words,
       grid: this.grid.map((row) => row.map((cell) => cell.letter || '')),
       pointsTotal: this.pointsTotal,
+      level: this.level,
     };
   }
 

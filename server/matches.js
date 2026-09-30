@@ -74,6 +74,7 @@ function blankPlayer(user) {
     total: 0,
     roundScore: 0,
     board: null,
+    level: 1,
     lastSeen: Date.now(),
   };
 }
@@ -432,7 +433,9 @@ function historyRow(match) {
       name: player.name,
       total: score(player),
       place: index + 1,
+      level: Number(player.level) || 0,
     }));
+  const level = players.reduce((best, player) => Math.max(best, player.level || 0), 0);
   return {
     id: `${match.id}-${match.playIndex || 1}`,
     playedAt: match.finishedAt || match.createdAt || new Date().toISOString(),
@@ -440,6 +443,7 @@ function historyRow(match) {
     skillId: match.skillId,
     translate: Boolean(match.translate),
     rounds: match.rounds,
+    level,
     players,
   };
 }
@@ -762,6 +766,7 @@ export function matchRoutes(app) {
           item.total = 0;
           item.roundScore = 0;
           item.board = null;
+          item.level = 1;
           item.playedWords = [];
           item.lastSeen = now;
         });
@@ -788,6 +793,8 @@ export function matchRoutes(app) {
         const nextBoard = cleanBoard(req.body, dict, current.skillId);
         const previous = player.board?.words?.length || 0;
         if (nextBoard.words.length >= previous) player.board = nextBoard;
+        const level = Number(req.body?.level);
+        if (Number.isInteger(level) && level > (player.level || 1)) player.level = level;
         if (req.body?.finish && current.phase === 'playing' && !current.finisher) {
           current.finisher = { userId: user.id, name: user.name };
           current.phase = 'review';

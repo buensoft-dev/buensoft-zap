@@ -241,18 +241,21 @@ export function historyHtml(rows) {
         <strong>${player.total || 0}</strong>
       </li>
     `).join('');
+    const when = historyStamp(match.playedAt);
+    const reached = Number(match.level) || Math.max(0, ...players.map((player) => Number(player.level) || 0));
+    const whenLine = reached > 0 ? `Nivel ${reached}: ${when}` : when;
     const playerLabel = `${count} ${count === 1 ? 'JUGADOR' : 'JUGADORES'}`;
     const roundLabel = `${rounds} ${rounds === 1 ? 'RONDA' : 'RONDAS'}`;
     return `
       <article class="history-card">
         <h3 class="history-round">${playerLabel} · ${roundLabel} · ${skill}</h3>
         <p class="history-sub">${mode}${gloss}</p>
-        <p class="history-when">${historyStamp(match.playedAt)}</p>
+        <p class="history-when">${whenLine}</p>
         <ol class="tops">${places}</ol>
       </article>
     `;
   }).join('') : '<p class="hint">Todavía no hay competencias guardadas.</p>';
-  return `<h3 class="history-banner">ÚLTIMAS 3 PARTIDAS JUGADAS</h3>${cards}`;
+  return `<h3 class="history-banner">ÚLTIMAS 3 PARTIDAS</h3>${cards}`;
 }
 
 let boardPost = 0;

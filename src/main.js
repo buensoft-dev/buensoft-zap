@@ -2,7 +2,7 @@ import './style.css';
 import { Game, MODES, SKILLS } from './game.js';
 import { historyHtml, matchHtml, postBoard } from './compete.js';
 
-const VERSION = '1.5.2';
+const VERSION = '1.5.3';
 const app = document.querySelector('#app');
 const cache = new Map();
 
@@ -877,7 +877,7 @@ function scoresHtml() {
       <span>${index + 1}</span>
       <span>${escapeHtml(row.name)}</span>
       <strong>${row.points}</strong>
-      <em>Nivel ${row.level} * ${scoreStamp(row.createdAt)}</em>
+      <em>Nivel ${row.level}: ${scoreStamp(row.createdAt)}</em>
     </li>
   `).join('');
   return `<ol class="tops">${rows}</ol>`;

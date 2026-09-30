@@ -857,7 +857,12 @@ function visibleScores() {
   const mode = modeById(state.modeId).label;
   const skill = boardSkill(skillById(state.skillId).name);
   return state.scores
-    .filter((row) => row.mode === mode && boardSkill(row.skill) === skill && Boolean(row.daily) === state.daily && Boolean(row.translate) === state.translate && (!state.daily || row.day === today()))
+    .filter((row) => {
+      if (row.mode !== mode || boardSkill(row.skill) !== skill) return false;
+      if (Boolean(row.translate) !== state.translate) return false;
+      if (state.daily) return Boolean(row.daily) && row.day === today();
+      return true;
+    })
     .sort((a, b) => b.points - a.points || b.level - a.level || String(a.createdAt).localeCompare(String(b.createdAt)))
     .slice(0, 10);
 }
@@ -872,7 +877,7 @@ function scoresHtml() {
       <span>${index + 1}</span>
       <span>${escapeHtml(row.name)}</span>
       <strong>${row.points}</strong>
-      <em>${scoreStamp(row.createdAt)}</em>
+      <em>Nivel ${row.level} * ${scoreStamp(row.createdAt)}</em>
     </li>
   `).join('');
   return `<ol class="tops">${rows}</ol>`;

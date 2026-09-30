@@ -1185,7 +1185,21 @@ a.google:hover { filter: brightness(1.08); }
 }
 .account-line { margin: 8px 0 0; }
 .history-card { margin: 0 0 14px; }
-.history-card h3 { margin: 0; font-family: Fraunces, serif; font-size: 22px; }
+.history-banner {
+  margin: 0 0 14px;
+  font-family: Fraunces, serif;
+  font-size: 28px;
+  font-weight: 560;
+  line-height: 1.05;
+}
+.history-card h3,
+.history-round {
+  margin: 0;
+  font-family: Outfit, sans-serif;
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1.25;
+}
 .menu-setup .sheet-actions {
   flex-direction: column;
   align-items: stretch;
@@ -1209,13 +1223,6 @@ a.google:hover { filter: brightness(1.08); }
 .menu-scores .tops li span:nth-child(2) { font-size: 13px; }
 .menu-scores .tops li strong { font-size: 16px; }
 .menu-scores .tops li em { font-size: 11px; }
-.history-card h3 {
-  margin: 0;
-  font-family: Fraunces, serif;
-  font-size: 17px;
-  font-weight: 560;
-  line-height: 1.2;
-}
 .history-sub { margin: 3px 0 0; font-size: 14px; font-weight: 700; }
 .history-when { margin: 1px 0 6px; color: var(--muted); font-size: 12px; }
 .compete-panel { margin-top: 16px; padding-top: 8px; border-top: 1px solid var(--line); }

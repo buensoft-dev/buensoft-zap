@@ -245,14 +245,14 @@ export function historyHtml(rows) {
     const roundLabel = `${rounds} ${rounds === 1 ? 'RONDA' : 'RONDAS'}`;
     return `
       <article class="history-card">
-        <h3>${playerLabel} · ${roundLabel} · ${skill}</h3>
+        <h3 class="history-round">${playerLabel} · ${roundLabel} · ${skill}</h3>
         <p class="history-sub">${mode}${gloss}</p>
         <p class="history-when">${historyStamp(match.playedAt)}</p>
         <ol class="tops">${places}</ol>
       </article>
     `;
   }).join('') : '<p class="hint">Todavía no hay competencias guardadas.</p>';
-  return `<h3 class="board-title">ÚLTIMAS 3 PARTIDAS JUGADAS</h3>${cards}`;
+  return `<h3 class="history-banner">ÚLTIMAS 3 PARTIDAS JUGADAS</h3>${cards}`;
 }
 
 let boardPost = 0;

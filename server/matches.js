@@ -524,7 +524,12 @@ export function matchRoutes(app) {
       }
       let match = await load(id);
       if (match) {
-        match = await updateMatch(id, (current) => (sweepMatch(current) ? undefined : false));
+        match = await updateMatch(id, (current) => {
+          const swept = sweepMatch(current);
+          const phase = current.phase;
+          tryAdvance(current);
+          return swept || current.phase !== phase ? undefined : false;
+        });
       }
       const player = match?.players?.find((item) => item.userId === user.id);
       const open = match && ['lobby', 'playing', 'review', 'podium'].includes(match.phase);
@@ -544,7 +549,12 @@ export function matchRoutes(app) {
     try {
       const existing = await load(req.params.id);
       if (!existing) fail('La partida no existe', 404);
-      const match = await updateMatch(req.params.id, (current) => (sweepMatch(current) ? undefined : false));
+      const match = await updateMatch(req.params.id, (current) => {
+        const swept = sweepMatch(current);
+        const phase = current.phase;
+        tryAdvance(current);
+        return swept || current.phase !== phase ? undefined : false;
+      });
       if (!match) fail('La partida no existe', 404);
       const user = currentUser(req);
       res.json(publicMatch(match, user?.id));
@@ -564,7 +574,11 @@ export function matchRoutes(app) {
         if (player?.quit) fail('Saliste de esta partida y no puedes volver', 403);
         if (player?.idle) fail('Se cerró tu lugar por inactividad', 403);
         if (player?.left) fail('Ya no estás en esta partida', 403);
-        if (player) return false;
+        if (player) {
+          const phase = current.phase;
+          tryAdvance(current);
+          return current.phase === phase ? false : undefined;
+        }
         if (current.phase !== 'lobby') fail('La partida ya comenzó');
         if (activePlayers(current).length >= current.seats) fail('La partida ya está llena');
         current.players.push(blankPlayer(user));
@@ -612,28 +626,33 @@ export function matchRoutes(app) {
   app.post('/api/matches/:id/invite/answer', async (req, res) => {
     try {
       const user = requireUser(req);
-      const match = await load(req.params.id);
-      if (!match) fail('La partida no existe', 404);
-      const invite = match.invites.find((item) => item.userId === user.id && item.status === 'pending');
-      if (!invite) fail('No tienes esa invitación');
-      if (req.body?.accept && match.phase === 'lobby') {
-        invite.status = 'accepted';
-        if (!match.players.some((player) => player.userId === user.id && !player.left && !player.quit)) {
-          if (activePlayers(match).length >= match.seats) fail('La partida ya está llena');
-          const previous = match.players.find((player) => player.userId === user.id);
-          if (previous?.quit || previous?.idle) fail('Ya no puedes entrar a esta partida', 403);
-          if (previous) {
-            previous.left = false;
-            previous.lastSeen = Date.now();
-          } else match.players.push(blankPlayer(user));
+      const existing = await load(req.params.id);
+      if (!existing) fail('La partida no existe', 404);
+      const accept = Boolean(req.body?.accept);
+      let joined = false;
+      const match = await updateMatch(req.params.id, (current) => {
+        const invite = (current.invites || []).find((item) => item.userId === user.id && item.status === 'pending');
+        if (!invite) fail('No tienes esa invitación');
+        if (accept && current.phase === 'lobby') {
+          invite.status = 'accepted';
+          if (!current.players.some((player) => player.userId === user.id && !player.left && !player.quit)) {
+            if (activePlayers(current).length >= current.seats) fail('La partida ya está llena');
+            const previous = current.players.find((player) => player.userId === user.id);
+            if (previous?.quit || previous?.idle) fail('Ya no puedes entrar a esta partida', 403);
+            if (previous) {
+              previous.left = false;
+              previous.lastSeen = Date.now();
+            } else current.players.push(blankPlayer(user));
+          }
+          pushNotice(current, `${user.name} se unió y está esperando`, user.id);
+          tryAdvance(current);
+          joined = true;
+          return;
         }
-        await save(match);
-        setMatchCookie(req, res, match.id);
-        res.json(publicMatch(match, user.id));
-        return;
-      }
-      invite.status = 'declined';
-      await save(match);
+        invite.status = 'declined';
+      });
+      if (!match) fail('La partida no existe', 404);
+      if (joined) setMatchCookie(req, res, match.id);
       res.json(publicMatch(match, user.id));
     } catch (error) {
       res.status(error.status || 500).json({ error: error.message || 'No se pudo responder' });
@@ -670,9 +689,15 @@ export function matchRoutes(app) {
         sweepMatch(current);
         const player = activePlayers(current).find((item) => item.userId === user.id);
         if (!player) fail('No estás en esta partida', 403);
+        const wasReady = player.ready;
         player.ready = true;
         player.lastSeen = Date.now();
         tryAdvance(current);
+        if (!wasReady && current.phase === 'lobby' && current.hostId === user.id) {
+          const missing = current.seats - activePlayers(current).length;
+          const noun = missing === 1 ? 'jugador' : 'jugadores';
+          pushNotice(current, `El anfitrión ya inició. Aún no empieza: faltan ${missing} ${noun}.`, user.id);
+        }
       });
       if (!match) fail('La partida no existe', 404);
       setMatchCookie(req, res, match.id);

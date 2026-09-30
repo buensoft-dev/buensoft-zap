@@ -61,11 +61,11 @@ function lobbyHtml(state, match) {
             ${users.map((user) => `<button class="choice" data-invite="${escapeHtml(user.id)}" data-name="${escapeHtml(user.name)}" type="button">${escapeHtml(user.name)}</button>`).join('') || '<p class="hint">Aún no hay otros jugadores registrados.</p>'}
           </div>
         ` : ''}
+        <p class="lobby-status" role="status">${lobbyWaitReason(match, seated)}</p>
         <div class="sheet-actions">
           ${host ? readyControl('INICIAR PARTIDA', me?.ready, `ESPERANDO JUGADORES ${seated.length}/${match.seats}`) : ''}
           <button class="ghost" id="match-leave" type="button">Salir</button>
         </div>
-        <p class="hint">${host ? 'Al pulsar Iniciar partida el botón espera a que se unan los jugadores de la sala. Cuando estén todos, la partida empieza sola.' : 'Aquí ves quién ya está en la sala. Cuando el anfitrión inicie y se complete el grupo, la partida empieza sola.'}</p>
       </div>
     </div>
   `;
@@ -120,6 +120,23 @@ function reviewHtml(match, state) {
       </div>
     </div>
   `;
+}
+
+function lobbyWaitReason(match, seated) {
+  const host = seated.find((player) => player.userId === match.hostId);
+  const missing = Math.max(0, match.seats - seated.length);
+  const count = `${seated.length} de ${match.seats}`;
+  const noun = missing === 1 ? 'jugador' : 'jugadores';
+  if (!host?.ready && missing > 0) {
+    return `Aún no empieza: el anfitrión no ha iniciado la partida y faltan ${missing} ${noun} (${count} en la sala).`;
+  }
+  if (!host?.ready) {
+    return 'Aún no empieza: ya están todos en la sala, pero el anfitrión no ha pulsado Iniciar partida.';
+  }
+  if (missing > 0) {
+    return `Aún no empieza: el anfitrión ya inició la partida, pero faltan ${missing} ${noun} (${count} en la sala). Comenzará sola cuando entren.`;
+  }
+  return 'Todos están en la sala. La partida está por comenzar.';
 }
 
 function readyControl(label, waiting, waitingLabel = 'ESPERANDO A LOS DEMÁS') {

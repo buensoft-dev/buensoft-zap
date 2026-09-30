@@ -2,7 +2,7 @@ import './style.css';
 import { Game, MODES, SKILLS } from './game.js';
 import { historyHtml, matchHtml, postBoard } from './compete.js';
 
-const VERSION = '1.5.0';
+const VERSION = '1.5.1';
 const app = document.querySelector('#app');
 const cache = new Map();
 
@@ -707,28 +707,33 @@ function racePlayers() {
   }).sort((a, b) => b.score - a.score || a.name.localeCompare(b.name));
 }
 
-function raceHtml() {
-  if (!state.match || state.screen !== 'play') return '';
-  const players = racePlayers();
-  if (players.length < 2) return '';
+function raceChips(players) {
   const best = players[0]?.score || 0;
-  return `<div class="race-bar">${players.map((player) => `
-    <span class="race-chip ${player.mine ? 'mine' : ''} ${player.score === best && best > 0 ? 'lead' : ''}">
-      <em>${escapeHtml(player.name)}</em><strong>${player.score}</strong>
-    </span>
-  `).join('')}</div>`;
-}
-
-function paintRace() {
-  const bar = app.querySelector('.race-bar');
-  if (!bar || !state.match) return;
-  const players = racePlayers();
-  const best = players[0]?.score || 0;
-  bar.innerHTML = players.map((player) => `
+  return players.map((player) => `
     <span class="race-chip ${player.mine ? 'mine' : ''} ${player.score === best && best > 0 ? 'lead' : ''}">
       <em>${escapeHtml(player.name)}</em><strong>${player.score}</strong>
     </span>
   `).join('');
+}
+
+function raceHtml() {
+  if (!state.match || state.screen !== 'play') return '';
+  const players = racePlayers();
+  if (players.length < 2) return '';
+  return `<div class="race-bar">${raceChips(players)}</div>`;
+}
+
+function raceCard() {
+  const bar = raceHtml();
+  if (!bar) return '';
+  return `<aside class="card race-card"><span>Jugadores</span>${bar}</aside>`;
+}
+
+function paintRace() {
+  const bars = app.querySelectorAll('.race-bar');
+  if (!bars.length || !state.match) return;
+  const html = raceChips(racePlayers());
+  bars.forEach((bar) => { bar.innerHTML = html; });
 }
 
 function surpriseNote(game) {
@@ -791,7 +796,6 @@ function boardHtml(game) {
 
   return `
     <section class="card board ${game.combo >= 2 ? 'combo-hot' : ''}">
-      ${raceHtml()}
       <div class="warning">${game.warning || ''}</div>
       ${surpriseNote(game)}
       ${game.bonus ? `<div class="fx">${game.bonus}</div>` : ''}
@@ -1448,7 +1452,9 @@ function followRow() {
   if (state.followedRow === state.game.playerRow) return;
   state.followedRow = state.game.playerRow;
   const row = app.querySelector('.row.is-player');
-  row?.scrollIntoView({ behavior: 'smooth', block: 'start', inline: 'nearest' });
+  const board = app.querySelector('.board');
+  if (!row || !board || board.scrollHeight <= board.clientHeight + 1) return;
+  row.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' });
 }
 
 function captureGlide() {
@@ -1510,6 +1516,7 @@ function render() {
   const boardOn = Boolean(game && state.screen !== 'menu');
   app.innerHTML = `
     <div class="app${boardOn ? ' is-board' : ''}">
+      ${boardOn ? '<div class="board-screen">' : ''}
       <header class="topbar">
         <div class="brand">
           <img class="brand-mark" src="/favicon.png" alt="" />
@@ -1533,6 +1540,7 @@ function render() {
           <div class="side-col">
             ${translateHtml(game)}
             <aside class="card meaning">${meaningBlock(game)}</aside>
+            <div class="race-slot race-slot-side">${raceCard()}</div>
             ${state.screen === 'play' && !state.match ? `
               <div class="target-bar ${state.recordShown ? 'beaten' : ''}">
                 <span>${state.recordShown ? 'Nuevo top score' : 'Top a vencer'}</span>
@@ -1544,6 +1552,8 @@ function render() {
           <div class="play-main">${boardHtml(game)}</div>
         </div>
       ` : ''}
+      ${boardOn ? '</div>' : ''}
+      ${boardOn ? `<div class="race-slot race-slot-below">${raceCard()}</div>` : ''}
     </div>
     ${state.screen === 'menu' || state.screen === 'loading' && !game ? menuHtml() : ''}
     ${state.rulesOpen && state.screen === 'menu' ? rulesHtml() : ''}

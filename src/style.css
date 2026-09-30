@@ -639,17 +639,36 @@ h1 { font-size: 40px; line-height: 0.95; }
 .surprise-tag { font-size: 11px; font-weight: 800; color: var(--gold-2); letter-spacing: 0.04em; }
 .row.surprise-double { box-shadow: inset 3px 0 0 var(--gold); }
 .row.surprise-long { box-shadow: inset 3px 0 0 var(--gold-2); }
-.race-bar { display: flex; gap: 8px; overflow: auto; margin: 0 0 10px; }
+.race-bar { display: flex; flex-direction: column; gap: 8px; overflow: auto; margin: 8px 0 0; min-height: 0; }
 .race-chip {
   display: flex;
-  gap: 6px;
+  justify-content: space-between;
+  gap: 8px;
   align-items: baseline;
+  min-width: 0;
   padding: 6px 10px;
-  border-radius: 999px;
+  border-radius: 14px;
   border: 1px solid var(--line);
+}
+.race-chip em {
+  font-style: normal;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
-.race-chip em { font-style: normal; }
+.race-chip strong { flex: none; }
+.race-card { padding: 14px 16px; flex: none; }
+.race-card > span {
+  display: block;
+  color: var(--gold);
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+.race-slot:empty { display: none; }
+.race-slot-below { display: none; }
+.board-screen { display: contents; }
 .race-chip.mine { border-color: var(--gold); }
 .race-chip.lead strong { color: var(--gold-2); }
 .marks { display: flex; gap: 8px; margin: 12px 0; }
@@ -1203,6 +1222,16 @@ a.google:hover { filter: brightness(1.08); }
 .roster { list-style: none; margin: 10px 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
 .roster li { display: flex; gap: 8px; align-items: center; justify-content: space-between; }
 .roster em { color: var(--muted); font-style: normal; }
+.lobby-status {
+  margin: 12px 0 0;
+  padding: 12px 14px;
+  border-radius: 16px;
+  border: 1px solid var(--gold);
+  background: rgba(255, 225, 74, 0.12);
+  color: var(--cream);
+  font-weight: 700;
+  line-height: 1.35;
+}
 .minis { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; margin: 12px 0; }
 .mini { border: 1px solid var(--line); border-radius: 16px; padding: 10px; }
 .mini header { display: flex; justify-content: space-between; gap: 8px; }
@@ -1690,7 +1719,7 @@ body:has(.app.is-board) {
   font-size: 13px;
 }
 
-.app.is-board .race-bar { flex: none; margin-bottom: 6px; }
+.app.is-board .race-bar { flex: none; margin: 8px 0 0; }
 
 .app.is-board .rows {
   flex: 1;
@@ -1992,4 +2021,49 @@ body:has(.app.is-board) {
   width: auto;
   max-width: max-content;
   flex: none;
+}
+
+@media (max-width: 980px) {
+  body:has(.app.is-board) {
+    height: auto;
+    min-height: 100%;
+    overflow-x: hidden;
+    overflow-y: auto;
+  }
+
+  .app.is-board {
+    display: block;
+    height: auto;
+    max-height: none;
+    min-height: 100dvh;
+    overflow: visible;
+  }
+
+  .app.is-board .board-screen {
+    display: flex;
+    flex-direction: column;
+    height: calc(100dvh - 24px);
+    overflow: hidden;
+  }
+
+  .app.is-board .board-screen .layout {
+    flex: 1 1 auto;
+    min-height: 0;
+  }
+
+  .app.is-board .race-slot-side { display: none; }
+
+  .app.is-board .race-slot-below:not(:empty) {
+    display: block;
+    margin-top: 8px;
+    padding-bottom: 20px;
+  }
+}
+
+@media (max-width: 760px) {
+  .app.is-board .board-screen {
+    height: calc(100dvh - 12px - env(safe-area-inset-bottom, 0px));
+  }
+
+  .app.is-board .race-card { padding: 10px 12px; }
 }

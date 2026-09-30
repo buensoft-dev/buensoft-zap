@@ -217,28 +217,42 @@ function podiumHtml(match) {
   `;
 }
 
-function historyTitle(match) {
-  const rounds = Number(match.rounds) || 1;
-  const players = match.players?.length || 0;
-  const mode = match.modeId === 'en-es' ? 'Inglés-Español' : 'Español-Inglés';
-  const skill = SKILLS.find((item) => item.id === Number(match.skillId))?.name || 'Principiante';
-  const date = new Date(match.playedAt || Date.now());
-  const stamp = `${date.getDate()}/${date.getMonth() + 1}/${date.getFullYear()}`;
-  return `${rounds} ${rounds === 1 ? 'Ronda' : 'Rondas'} - ${players} jugadores - ${mode} - ${skill} - ${stamp}`;
+function historyStamp(value) {
+  const date = new Date(value || '');
+  if (Number.isNaN(date.getTime())) return '';
+  const hours = String(date.getHours()).padStart(2, '0');
+  const minutes = String(date.getMinutes()).padStart(2, '0');
+  return `${date.getDate()}/${date.getMonth() + 1}/${date.getFullYear()} ${hours}:${minutes}`;
 }
 
 export function historyHtml(rows) {
-  if (!rows?.length) return '<p class="hint">Todavía no hay competencias guardadas.</p>';
-  return rows.map((match, index) => {
-    const top = (match.players || []).slice(0, 3);
-    const places = top.map((player, place) => `<li><span>${place + 1}</span><span>${escapeHtml(player.name)}</span><strong>${player.total || 0}</strong></li>`).join('');
+  const list = [...(rows || [])].slice(0, 3);
+  const cards = list.length ? list.map((match) => {
+    const count = match.players?.length || 0;
+    const rounds = Number(match.rounds) || 1;
+    const skill = (SKILLS.find((item) => item.id === Number(match.skillId))?.name || 'Principiante').toUpperCase();
+    const mode = MODES.find((item) => item.id === match.modeId)?.label || 'Español → Inglés';
+    const gloss = match.translate ? ' con Traducción' : '';
+    const players = [...(match.players || [])].sort((a, b) => (a.place || 99) - (b.place || 99) || (b.total || 0) - (a.total || 0));
+    const places = players.map((player, index) => `
+      <li>
+        <span>${player.place || index + 1}</span>
+        <span>${escapeHtml(player.name)}</span>
+        <strong>${player.total || 0}</strong>
+      </li>
+    `).join('');
+    const playerLabel = `${count} ${count === 1 ? 'JUGADOR' : 'JUGADORES'}`;
+    const roundLabel = `${rounds} ${rounds === 1 ? 'RONDA' : 'RONDAS'}`;
     return `
-      <details class="history-card" ${index === 0 ? 'open' : ''}>
-        <summary>${escapeHtml(historyTitle(match))}</summary>
+      <article class="history-card">
+        <h3>${playerLabel} · ${roundLabel} · ${skill}</h3>
+        <p class="history-sub">${mode}${gloss}</p>
+        <p class="history-when">${historyStamp(match.playedAt)}</p>
         <ol class="tops">${places}</ol>
-      </details>
+      </article>
     `;
-  }).join('');
+  }).join('') : '<p class="hint">Todavía no hay competencias guardadas.</p>';
+  return `<h3 class="board-title">ÚLTIMAS 3 PARTIDAS JUGADAS</h3>${cards}`;
 }
 
 let boardPost = 0;

@@ -2,7 +2,7 @@ import './style.css';
 import { Game, MODES, SKILLS } from './game.js';
 import { historyHtml, matchHtml, postBoard } from './compete.js';
 
-const VERSION = '1.5.1';
+const VERSION = '1.5.2';
 const app = document.querySelector('#app');
 const cache = new Map();
 
@@ -831,12 +831,26 @@ function today() {
   return `${date.getFullYear()}-${month}-${day}`;
 }
 
-function scoreTitle() {
+function scoreStamp(value) {
+  const date = new Date(value || '');
+  if (Number.isNaN(date.getTime())) return '';
+  const hours = String(date.getHours()).padStart(2, '0');
+  const minutes = String(date.getMinutes()).padStart(2, '0');
+  return `${date.getDate()}/${date.getMonth() + 1}/${date.getFullYear()} ${hours}:${minutes}`;
+}
+
+function scoreHeadHtml() {
   const mode = modeById(state.modeId).label;
   const skill = boardSkill(skillById(state.skillId).name);
-  const prefix = state.daily ? 'Desafío del día · ' : '';
-  const gloss = state.translate ? ' · Traducción' : '';
-  return `${prefix}Top Score - ${mode} - ${skill}${gloss}`;
+  const gloss = state.translate ? ' con Traducción' : '';
+  const subtitle = state.daily ? `Desafío del día · ${mode}${gloss}` : `${mode}${gloss}`;
+  return `
+    <div class="score-head">
+      <h3 class="board-title">LOS MEJORES 10 RESULTADOS</h3>
+      <p class="score-sub">${subtitle}</p>
+      <p class="score-skill">(${skill})</p>
+    </div>
+  `;
 }
 
 function visibleScores() {
@@ -858,7 +872,7 @@ function scoresHtml() {
       <span>${index + 1}</span>
       <span>${escapeHtml(row.name)}</span>
       <strong>${row.points}</strong>
-      <em>Nivel ${row.level} · ${escapeHtml(row.skill)}</em>
+      <em>${scoreStamp(row.createdAt)}</em>
     </li>
   `).join('');
   return `<ol class="tops">${rows}</ol>`;
@@ -937,10 +951,9 @@ function friendsPanel() {
 }
 
 async function loadCompeteLists() {
-  if (!state.user) return;
   const [history, invites] = await Promise.all([
     fetch('/api/history').then((response) => response.json()).catch(() => []),
-    fetch('/api/invites').then((response) => response.json()).catch(() => []),
+    state.user ? fetch('/api/invites').then((response) => response.json()).catch(() => []) : Promise.resolve([]),
   ]);
   state.history = Array.isArray(history) ? history : [];
   state.invites = Array.isArray(invites) ? invites : [];
@@ -961,7 +974,7 @@ function watchInvites() {
 async function showPlayMode(mode) {
   state.playMode = mode;
   state.error = mode === 'friends' && !state.user ? 'Entra con Google para jugar con amigos' : '';
-  if (mode === 'friends' && state.user) await loadCompeteLists();
+  if (mode === 'friends') await loadCompeteLists();
   if (state.screen === 'menu') render();
 }
 
@@ -1247,7 +1260,7 @@ function menuHtml() {
             </div>
           </section>
           <section class="menu-scores">
-            ${state.playMode === 'friends' ? `<h3 class="board-title">Ganadores</h3>${historyHtml(state.history)}` : `<h3 class="board-title">${scoreTitle()}</h3>${scoresHtml()}`}
+            ${state.playMode === 'friends' ? historyHtml(state.history) : `${scoreHeadHtml()}${scoresHtml()}`}
           </section>
         </div>
         </div>
@@ -1435,7 +1448,7 @@ function reviewHtml(game) {
         ${nearMissHtml(game)}
         ${personalHtml(game)}
         ${marksHtml()}
-        <h3 class="board-title">${scoreTitle()}</h3>
+        ${scoreHeadHtml()}
         ${scoresHtml()}
         ${reviewWordsHtml(game)}
         <div class="sheet-actions">

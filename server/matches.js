@@ -346,9 +346,17 @@ async function createPostgres() {
         INSERT INTO zap_history (id, played_at, data) VALUES ($1, $2, $3::jsonb)
         ON CONFLICT (id) DO NOTHING
       `, [row.id, row.playedAt, JSON.stringify(row)]);
+      await pool.query(`
+        DELETE FROM zap_history
+        WHERE id NOT IN (
+          SELECT id FROM (
+            SELECT id FROM zap_history ORDER BY played_at DESC LIMIT 3
+          ) recent
+        )
+      `);
     },
     async history() {
-      const result = await pool.query(`SELECT data FROM zap_history ORDER BY played_at DESC LIMIT 30`);
+      const result = await pool.query(`SELECT data FROM zap_history ORDER BY played_at DESC LIMIT 3`);
       return result.rows.map((row) => row.data);
     },
   };
@@ -372,10 +380,12 @@ function store() {
         async archive(row) {
           const rows = readHistory().filter((item) => item.id !== row.id);
           rows.unshift(row);
-          writeHistory(rows.slice(0, 30));
+          writeHistory(rows.slice(0, 3));
         },
         async history() {
-          return readHistory();
+          const rows = readHistory();
+          if (rows.length > 3) writeHistory(rows.slice(0, 3));
+          return rows.slice(0, 3);
         },
       });
   }
@@ -407,6 +417,7 @@ async function save(match) {
   const boardsIn = activePlayers(match).every((player) => player.board || player.finished);
   if (!match.savedHistory && lastRound && (match.phase === 'podium' || boardsIn)) {
     match.savedHistory = true;
+    if (!match.finishedAt) match.finishedAt = new Date().toISOString();
     await matches.archive(historyRow(match));
   }
   await matches.save(match);
@@ -424,9 +435,10 @@ function historyRow(match) {
     }));
   return {
     id: `${match.id}-${match.playIndex || 1}`,
-    playedAt: match.createdAt || new Date().toISOString(),
+    playedAt: match.finishedAt || match.createdAt || new Date().toISOString(),
     modeId: match.modeId,
     skillId: match.skillId,
+    translate: Boolean(match.translate),
     rounds: match.rounds,
     players,
   };
@@ -470,11 +482,14 @@ export function matchRoutes(app) {
     try {
       const matches = await store();
       const archived = await matches.history();
-      const seen = new Set(archived.map((row) => row.id));
+      const seen = new Set(archived.flatMap((row) => [row.id, String(row.id).replace(/-\d+$/, '')]));
       const older = (await matches.all())
-        .filter((match) => match.phase === 'podium' && !seen.has(match.id))
+        .filter((match) => match.phase === 'podium' && !seen.has(match.id) && !seen.has(`${match.id}-${match.playIndex || 1}`))
         .map((match) => historyRow(match));
-      res.json([...archived, ...older].slice(0, 30));
+      const rows = [...archived, ...older]
+        .sort((a, b) => String(b.playedAt).localeCompare(String(a.playedAt)))
+        .slice(0, 3);
+      res.json(rows);
     } catch {
       res.status(500).json({ error: 'No se pudo leer el historial' });
     }

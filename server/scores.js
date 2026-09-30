@@ -5,7 +5,6 @@ import { fileURLToPath } from 'url';
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 const filePath = path.join(root, 'data', 'scores.json');
 const TOP = 10;
-const STORED = 300;
 
 function boardSkill(skill) {
   return skill === 'Experto' ? 'Avanzado' : skill;
@@ -46,7 +45,7 @@ function asEntry(body) {
     points,
     marker: Number.isInteger(marker) ? marker : 0,
     level: Number.isInteger(level) && level > 0 ? level : 1,
-    skill: cleanName(body.skill) || 'Intermedio',
+    skill: boardSkill(cleanName(body.skill) || 'Intermedio'),
     mode: cleanName(body.mode) || 'Español → Inglés',
     daily: Boolean(body.daily),
     day: /^\d{4}-\d{2}-\d{2}$/.test(body.day) ? body.day : '',
@@ -58,6 +57,27 @@ function rank(rows) {
   return [...rows]
     .sort((a, b) => b.points - a.points || b.level - a.level || String(a.createdAt).localeCompare(String(b.createdAt)))
     .slice(0, TOP);
+}
+
+function comboKey(row) {
+  const daily = Boolean(row.daily);
+  return [
+    row.mode,
+    boardSkill(row.skill),
+    daily ? '1' : '0',
+    row.translate ? '1' : '0',
+    daily ? (row.day || '') : '',
+  ].join('|');
+}
+
+function keepTop(rows) {
+  const groups = new Map();
+  for (const row of rows) {
+    const key = comboKey(row);
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(row);
+  }
+  return [...groups.values()].flatMap((group) => rank(group));
 }
 
 function readFileStore() {
@@ -98,14 +118,31 @@ async function createPostgres() {
   await pool.query(`ALTER TABLE scores ADD COLUMN IF NOT EXISTS daily BOOLEAN NOT NULL DEFAULT FALSE`);
   await pool.query(`ALTER TABLE scores ADD COLUMN IF NOT EXISTS day TEXT NOT NULL DEFAULT ''`);
   await pool.query(`ALTER TABLE scores ADD COLUMN IF NOT EXISTS translate BOOLEAN NOT NULL DEFAULT FALSE`);
+  async function prune() {
+    await pool.query(`UPDATE scores SET skill = 'Avanzado' WHERE skill = 'Experto'`);
+    await pool.query(`
+      DELETE FROM scores
+      WHERE id IN (
+        SELECT id FROM (
+          SELECT id,
+            ROW_NUMBER() OVER (
+              PARTITION BY mode, skill, daily, translate, CASE WHEN daily THEN day ELSE '' END
+              ORDER BY points DESC, level DESC, created_at ASC
+            ) AS n
+          FROM scores
+        ) ranked
+        WHERE n > $1
+      )
+    `, [TOP]);
+  }
   return {
     async list() {
+      await prune();
       const result = await pool.query(`
         SELECT id, name, points, marker, level, skill, mode, daily, day, translate, created_at AS "createdAt"
         FROM scores
         ORDER BY points DESC, level DESC, created_at ASC
-        LIMIT $1
-      `, [STORED]);
+      `);
       return result.rows;
     },
     async add(entry) {
@@ -114,6 +151,7 @@ async function createPostgres() {
         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
         RETURNING id, name, points, marker, level, skill, mode, daily, day, translate, created_at AS "createdAt"
       `, [entry.name, entry.points, entry.marker, entry.level, entry.skill, entry.mode, entry.daily, entry.day, entry.translate]);
+      await prune();
       return result.rows[0];
     },
   };
@@ -127,13 +165,16 @@ function store() {
       ? createPostgres()
       : Promise.resolve({
         async list() {
-          return readFileStore();
+          const rows = readFileStore();
+          const kept = keepTop(rows);
+          if (kept.length !== rows.length) writeFileStore(kept);
+          return kept;
         },
         async add(entry) {
           const rows = readFileStore();
           const saved = { ...entry, id: Date.now(), createdAt: new Date().toISOString() };
           rows.push(saved);
-          writeFileStore(rows.slice(-200));
+          writeFileStore(keepTop(rows));
           return saved;
         },
       });

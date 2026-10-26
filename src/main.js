@@ -2,7 +2,7 @@ import './style.css';
 import { Game, MODES, SKILLS } from './game.js';
 import { historyHtml, matchHtml, postBoard } from './compete.js';
 
-const VERSION = '1.5.3';
+const VERSION = '1.5.4';
 const app = document.querySelector('#app');
 const cache = new Map();
 
@@ -1033,6 +1033,13 @@ async function sendLobbyPresence() {
   await fetch(`/api/matches/${state.match.id}/pulse`, { method: 'POST' }).catch(() => {});
 }
 
+function matchViewStamp(match) {
+  if (!match) return '';
+  const visible = { ...match };
+  delete visible.youIdleMs;
+  return JSON.stringify(visible);
+}
+
 async function refreshMatch() {
   if (!state.match?.id || state.screen === 'play' && document.hidden) return;
   await sendLobbyPresence();
@@ -1040,8 +1047,8 @@ async function refreshMatch() {
   if (!response.ok) return;
   const next = await response.json();
   const previous = state.match.phase;
-  const stamp = JSON.stringify(next);
-  const changed = stamp !== state.matchStamp;
+  const stamp = matchViewStamp(next);
+  const changed = stamp !== matchViewStamp(state.match);
   state.match = next;
   state.matchStamp = stamp;
   noteServerIdle(next.youIdleMs, next.idleWarnMs);
@@ -1524,8 +1531,10 @@ function render() {
   if (state.screen === 'review') sounds.stopAll();
   const glideFrom = captureGlide();
   const overlay = app.querySelector('.overlay');
+  const sheet = app.querySelector('.sheet');
   const tableWrap = app.querySelector('.vocab-table-wrap');
   const keepOverlay = overlay ? overlay.scrollTop : 0;
+  const keepSheet = sheet ? sheet.scrollTop : 0;
   const keepTable = tableWrap ? tableWrap.scrollTop : 0;
   const keepWindow = window.scrollY;
   const game = state.game;
@@ -1593,8 +1602,10 @@ function render() {
   slideHighlight(glideFrom);
   const applyScroll = () => {
     const nextOverlay = app.querySelector('.overlay');
+    const nextSheet = app.querySelector('.sheet');
     const nextTable = app.querySelector('.vocab-table-wrap');
     if (nextOverlay) nextOverlay.scrollTop = keepOverlay;
+    if (nextSheet) nextSheet.scrollTop = keepSheet;
     if (nextTable) nextTable.scrollTop = keepTable;
     if (keepWindow) window.scrollTo(0, keepWindow);
   };

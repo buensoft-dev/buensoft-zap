@@ -2094,3 +2094,47 @@ body:has(.app.is-board) {
 
   .app.is-board .race-card { padding: 10px 12px; }
 }
+
+@media (max-width: 980px) {
+  html:has(.overlay),
+  body:has(.overlay),
+  body:has(.app.is-board):has(.overlay) {
+    overflow: hidden;
+    height: 100%;
+  }
+
+  body:has(.overlay),
+  body:has(.app.is-board):has(.overlay) {
+    position: fixed;
+    inset: 0;
+    width: 100%;
+  }
+
+  .overlay {
+    top: 0;
+    right: 0;
+    left: 0;
+    bottom: auto;
+    height: 100svh;
+    max-height: 100svh;
+    display: block;
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+    touch-action: pan-y;
+    padding: 10px 10px calc(24px + env(safe-area-inset-bottom));
+  }
+
+  .overlay:has(.sheet.narrow) {
+    display: grid;
+    align-items: center;
+    justify-items: center;
+  }
+
+  .overlay .sheet {
+    max-height: none;
+    overflow: visible;
+    margin: 0 auto;
+  }
+}

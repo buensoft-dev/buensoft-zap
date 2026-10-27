@@ -1911,6 +1911,17 @@ Promise.all([
 ]).then(([, auth]) => {
   state.authReady = true;
   state.user = auth.user || null;
+  if (!state.user) {
+    const match = document.cookie.match(/(?:^|;\s*)buensoft_user=([^;]*)/);
+    if (match) {
+      try {
+        const ssoData = JSON.parse(decodeURIComponent(match[1]));
+        if (ssoData && ssoData.name) {
+          state.user = { id: ssoData.sub || ssoData.id || ssoData.email, name: ssoData.name, email: ssoData.email, picture: ssoData.picture };
+        }
+      } catch(e) {}
+    }
+  }
   if (state.user) {
     state.playerName = state.user.name;
     loadCompeteLists().then(() => {

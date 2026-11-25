@@ -1262,9 +1262,12 @@ function menuHtml() {
   const skills = SKILLS.map((item) => `
     <button class="choice ${item.id === state.skillId ? 'active' : ''}" data-skill="${item.id}" type="button">${item.name} · ${item.seconds}s</button>
   `).join('');
-  const themeSwatches = THEMES.map((theme) =>
-    `<button class="swatch ${theme.id === state.theme ? 'active' : ''}" data-theme="${theme.id}" type="button">${theme.name}</button>`
-  ).join('');
+  const isRandomTheme = !['dark', 'light'].includes(state.theme);
+  const themeSwatches = `
+    <button class="swatch ${state.theme === 'dark' ? 'active' : ''}" data-theme="dark" type="button">🌙 Oscuro</button>
+    <button class="swatch ${state.theme === 'light' ? 'active' : ''}" data-theme="light" type="button">☀️ Claro</button>
+    <button class="swatch ${isRandomTheme ? 'active' : ''}" data-theme="random" type="button">🎲 Al azar</button>
+  `;
 
   if (state.menuView === 'stats') {
     return `
@@ -2002,7 +2005,13 @@ function bind() {
   }
   app.querySelectorAll('[data-theme]').forEach((button) => {
     button.onclick = () => {
-      state.theme = button.dataset.theme;
+      const picked = button.dataset.theme;
+      if (picked === 'random') {
+        const pool = ['neon', 'sunset', 'forest', 'sky'].filter((t) => t !== state.theme);
+        state.theme = pool[Math.floor(Math.random() * pool.length)] || 'neon';
+      } else {
+        state.theme = picked;
+      }
       localStorage.setItem('zap-theme', state.theme);
       applyTheme();
       render();

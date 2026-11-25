@@ -952,6 +952,11 @@ function friendsPanel() {
       </label>
     </div>
     <button class="primary" id="create-match" type="button">CREAR PARTIDA</button>
+    <p class="menu-label" style="margin-top:14px;">Unirse con código o enlace</p>
+    <div class="invite-link">
+      <input id="join-match-input" type="text" placeholder="Pega el enlace o código de sala" style="flex:1;min-width:140px;padding:8px 10px;border-radius:10px;border:1px solid rgba(255,255,255,0.2);background:rgba(0,0,0,0.25);color:inherit;" />
+      <button class="ghost" id="join-match-btn" type="button">UNIRSE</button>
+    </div>
   `;
 }
 
@@ -1777,9 +1782,56 @@ function bind() {
       copyLink.textContent = 'COPIADO';
       copyLink.classList.add('copied');
       setTimeout(() => {
-        copyLink.textContent = 'Copiar';
+        copyLink.textContent = 'Copiar enlace';
         copyLink.classList.remove('copied');
       }, 1400);
+    };
+  }
+  const copyCode = app.querySelector('#copy-code');
+  if (copyCode) {
+    copyCode.onclick = async () => {
+      try {
+        await navigator.clipboard.writeText(String(state.match.id));
+      } catch {
+        return;
+      }
+      copyCode.textContent = 'COPIADO';
+      copyCode.classList.add('copied');
+      setTimeout(() => {
+        copyCode.textContent = 'Copiar código';
+        copyCode.classList.remove('copied');
+      }, 1400);
+    };
+  }
+  const shareLink = app.querySelector('#share-link');
+  if (shareLink) {
+    shareLink.onclick = async () => {
+      const url = `${location.origin}/?partida=${state.match.id}`;
+      const text = `¡Únete a mi partida de Buensoft Zap! Código: ${state.match.id}`;
+      if (navigator.share) {
+        try {
+          await navigator.share({ title: 'Buensoft Zap', text, url });
+          return;
+        } catch {
+          // continuar a WhatsApp
+        }
+      }
+      window.open(`https://wa.me/?text=${encodeURIComponent(`${text}\n${url}`)}`, '_blank', 'noopener,noreferrer');
+    };
+  }
+  const joinBtn = app.querySelector('#join-match-btn');
+  const joinInput = app.querySelector('#join-match-input');
+  if (joinBtn && joinInput) {
+    const doJoin = () => {
+      const raw = String(joinInput.value || '').trim();
+      if (!raw) return;
+      const m = raw.match(/[?&]partida=([^&\s]+)/i);
+      const id = m ? decodeURIComponent(m[1]) : raw;
+      if (id) enterMatch(id);
+    };
+    joinBtn.onclick = doJoin;
+    joinInput.onkeydown = (event) => {
+      if (event.key === 'Enter') doJoin();
     };
   }
   app.querySelectorAll('[data-theme]').forEach((button) => {

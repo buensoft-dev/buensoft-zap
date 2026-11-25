@@ -30,8 +30,17 @@ function lobbyHtml(state, match) {
         <p class="eyebrow">Competencia</p>
         <h2>Ronda ${match.round} de ${match.rounds}</h2>
         <p class="hint">${mode} · ${skill} · ${seated.length} de ${match.seats} jugadores</p>
-        <p class="hint">Enlace de invitación</p>
-        <div class="invite-link"><code>${matchLink(match.id)}</code><button class="ghost" id="copy-link" type="button">Copiar</button></div>
+        <p class="hint">Invita con enlace directo o código de sala</p>
+        <div class="invite-link">
+          <code>${matchLink(match.id)}</code>
+          <button class="ghost" id="copy-link" type="button">Copiar enlace</button>
+          <button class="primary" id="share-link" type="button">WhatsApp / Compartir</button>
+        </div>
+        <div class="invite-link" style="margin-top:6px;">
+          <span class="hint" style="margin:0;">Código de sala:</span>
+          <code>${escapeHtml(match.id)}</code>
+          <button class="ghost" id="copy-code" type="button">Copiar código</button>
+        </div>
         <ul class="roster">
           ${seated.map((player) => `
             <li>

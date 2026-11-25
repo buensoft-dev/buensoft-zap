@@ -36,6 +36,7 @@ const state = {
   history: [],
   invites: [],
   playMode: 'solo',
+  menuView: 'home',
   competeSeats: 2,
   competeRounds: 2,
   marksLocked: false,
@@ -1219,68 +1220,198 @@ async function exitGame() {
   render();
 }
 
+function zapInitials(name) {
+  const parts = String(name || '?').trim().split(/\s+/).filter(Boolean);
+  if (!parts.length) return '?';
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return (parts[0][0] + parts[1][0]).toUpperCase();
+}
+
+function zapTopbarHtml(titleText, showBack = false) {
+  return `
+    <header class="zap-topbar">
+      <div class="zap-topbar-left">
+        ${showBack
+          ? '<button class="zap-btn zap-btn-ghost" id="back-home" type="button">← Menú principal</button>'
+          : `<div class="zap-brand">
+               <img src="/icon.png" alt="Buensoft Zap" class="zap-brand-icon" />
+               <div>
+                 <strong>Buensoft Zap</strong>
+                 <span class="zap-tag">v${VERSION}</span>
+               </div>
+             </div>`}
+      </div>
+      ${showBack ? `<strong class="zap-topbar-title">${titleText}</strong>` : ''}
+      <div class="zap-topbar-actions">
+        <button class="zap-btn zap-btn-ghost ${state.menuView === 'stats' ? 'is-active' : ''}" id="open-stats" type="button">📊 Estadísticas</button>
+        <button class="zap-btn zap-btn-ghost" id="rules" type="button">📖 Reglas</button>
+        ${state.user
+          ? `<div class="zap-user-chip"><span class="zap-avatar">${escapeHtml(zapInitials(state.user.name))}</span><span>${escapeHtml(state.user.name)}</span></div>
+             <button class="zap-btn zap-btn-ghost" id="logout" type="button">Salir</button>`
+          : googleLink()}
+      </div>
+    </header>
+  `;
+}
+
 function menuHtml() {
   const mode = modeById(state.modeId);
   const modes = MODES.map((item) => `
-    <button class="choice ${item.id === state.modeId ? 'active' : ''}" data-mode="${item.id}">${item.label}</button>
+    <button class="choice ${item.id === state.modeId ? 'active' : ''}" data-mode="${item.id}" type="button">${item.label}</button>
   `).join('');
   const skills = SKILLS.map((item) => `
-    <button class="choice ${item.id === state.skillId ? 'active' : ''}" data-skill="${item.id}">${item.name} · ${item.seconds}s</button>
+    <button class="choice ${item.id === state.skillId ? 'active' : ''}" data-skill="${item.id}" type="button">${item.name} · ${item.seconds}s</button>
   `).join('');
-  return `
-    <div class="overlay">
-      <div class="sheet menu-sheet">
-        <header class="menu-hero">
-          <img class="game-logo" src="/logo.jpg" alt="Buensoft Zap" />
-          <div class="theme-picker">
-            <p class="menu-label">Color</p>
-            <div class="themes">
-              ${THEMES.map((theme) => `<button class="swatch ${theme.id === state.theme ? 'active' : ''}" data-theme="${theme.id}">${theme.name}</button>`).join('')}
-            </div>
-          </div>
-          <div class="menu-hero-copy">
-            <h2>Arma palabras antes de que se acabe el tiempo <span class="version">v${VERSION}</span></h2>
-            <p class="hint">${mode.hint} Diez filas de ocho letras. El reloj avanza por las filas y cada palabra válida reparte fichas nuevas.</p>
-          </div>
-        </header>
-        ${invitesHtml()}
-        <div class="folder ${state.playMode === 'solo' ? 'is-solo' : 'is-friends'}">
-        <div class="play-tabs" role="tablist">
-          <button class="${state.playMode === 'solo' ? 'active' : ''}" data-play="solo" type="button" role="tab" aria-selected="${state.playMode === 'solo'}">Solo</button>
-          <button class="${state.playMode === 'friends' ? 'active' : ''} ${state.invites.length ? 'invite-tab' : ''}" data-play="friends" type="button" role="tab" aria-selected="${state.playMode === 'friends'}">Con amigos</button>
+  const themeSwatches = THEMES.map((theme) =>
+    `<button class="swatch ${theme.id === state.theme ? 'active' : ''}" data-theme="${theme.id}" type="button">${theme.name}</button>`
+  ).join('');
+
+  if (state.menuView === 'stats') {
+    return `
+      <div class="overlay zap-studio-overlay">
+        <div class="zap-shell">
+          ${zapTopbarHtml('Estadísticas — Buensoft Zap', true)}
+          <main class="zap-container">
+            <section class="zap-card">
+              <div class="zap-card-head">
+                <div>
+                  <span class="zap-eyebrow">Rendimiento personal</span>
+                  <h3>Récords y Marcador MODO SOLO</h3>
+                </div>
+                <div class="zap-pills">${modes}</div>
+              </div>
+              ${streakHtml()}
+              <div class="zap-stats-block">${scoreHeadHtml()}${scoresHtml()}</div>
+            </section>
+            <section class="zap-card">
+              <span class="zap-eyebrow">Competencia en vivo</span>
+              <h3>Historial MODO MULTIJUGADOR</h3>
+              <div class="zap-stats-block">${historyHtml(state.history)}</div>
+            </section>
+          </main>
         </div>
-        <div class="menu-grid">
-          <section class="menu-setup">
-            ${state.user ? `<p class="account-line">Entraste como <strong>${escapeHtml(state.user.name)}</strong></p>` : ''}
-            <p class="menu-label">Idioma</p>
-            <div class="choices">${modes}</div>
-            <p class="menu-label">Nivel</p>
-            <div class="skills">${skills}</div>
-            ${state.playMode === 'solo' ? `
-              <label class="check-line" for="daily">
-                <input id="daily" type="checkbox" ${state.daily ? 'checked' : ''} />
-                <span>Desafío del día · ${today()}</span>
+      </div>
+    `;
+  }
+
+  if (state.menuView === 'solo') {
+    return `
+      <div class="overlay zap-studio-overlay">
+        <div class="zap-shell">
+          ${zapTopbarHtml('Configurar MODO SOLO', true)}
+          <main class="zap-container narrow">
+            ${state.error ? `<div class="zap-alert">${escapeHtml(state.error)}</div>` : ''}
+            <section class="zap-card">
+              <span class="zap-eyebrow">Configuración de partida</span>
+              <h3>Idioma y Nivel</h3>
+              <p class="hint">${mode.hint}</p>
+              <p class="menu-label">Idioma</p>
+              <div class="choices">${modes}</div>
+              <p class="menu-label" style="margin-top:14px;">Nivel y tiempo por fila</p>
+              <div class="skills">${skills}</div>
+              <div class="zap-checks">
+                <label class="check-line" for="daily">
+                  <input id="daily" type="checkbox" ${state.daily ? 'checked' : ''} />
+                  <span>Desafío del día · ${today()}</span>
+                </label>
+                <label class="check-line" for="translate">
+                  <input id="translate" type="checkbox" ${state.translate ? 'checked' : ''} />
+                  <span>Modo traducción (pistas en el otro idioma)</span>
+                </label>
+              </div>
+              ${streakHtml()}
+              <div class="zap-footer-actions">
+                <button class="zap-btn zap-btn-gold zap-btn-lg" id="play" type="button">▶ COMENZAR PARTIDA SOLO</button>
+              </div>
+            </section>
+          </main>
+        </div>
+      </div>
+    `;
+  }
+
+  if (state.menuView === 'friends') {
+    return `
+      <div class="overlay zap-studio-overlay">
+        <div class="zap-shell">
+          ${zapTopbarHtml('MODO MULTIJUGADOR', true)}
+          <main class="zap-container narrow">
+            ${invitesHtml()}
+            ${state.error ? `<div class="zap-alert">${escapeHtml(state.error)}</div>` : ''}
+            <section class="zap-card">
+              <span class="zap-eyebrow">Sala en tiempo real</span>
+              <h3>Crear o unirse a una partida</h3>
+              <p class="menu-label">Idioma</p>
+              <div class="choices">${modes}</div>
+              <p class="menu-label" style="margin-top:12px;">Nivel</p>
+              <div class="skills">${skills}</div>
+              <label class="check-line" for="translate" style="margin:12px 0;">
+                <input id="translate" type="checkbox" ${state.translate ? 'checked' : ''} />
+                <span>Modo traducción</span>
               </label>
-            ` : ''}
-            <label class="check-line" for="translate">
-              <input id="translate" type="checkbox" ${state.translate ? 'checked' : ''} />
-              <span>Modo traducción</span>
-            </label>
-            <p class="hint">En modo traducción ves hasta 3 traducciones de palabras que puedes formar. Escribe la palabra en el idioma del tablero.</p>
-            <button class="rules-link" id="rules" type="button">Instrucciones</button>
-            ${streakHtml()}
-            ${state.playMode === 'friends' ? friendsPanel() : ''}
-            ${state.error ? `<p class="hint">${state.error}</p>` : ''}
-            <div class="sheet-actions">
-              ${state.playMode === 'solo' ? '<button class="primary" id="play">JUGAR</button>' : ''}
-              ${state.user ? '<button class="ghost" id="logout" type="button">SALIR</button>' : googleLink()}
+              ${friendsPanel()}
+            </section>
+          </main>
+        </div>
+      </div>
+    `;
+  }
+
+  // Pantalla principal unificada (igual a Buensoft Trivia: MODO SOLO vs MODO MULTIJUGADOR)
+  return `
+    <div class="overlay zap-studio-overlay">
+      <div class="zap-shell">
+        ${zapTopbarHtml('Buensoft Zap', false)}
+        <main class="zap-container">
+          ${invitesHtml()}
+          <section class="zap-hero">
+            <div>
+              <span class="zap-eyebrow">${state.user ? `Hola, ${escapeHtml(state.user.name)}` : 'Buensoft Suite'}</span>
+              <h2>Elige tu modalidad de juego</h2>
+              <p class="hint">Arma palabras bilingües antes de que baje el reloj. Diez filas de ocho letras, combos, ZAP y fila sorpresa.</p>
+            </div>
+            <div class="zap-theme-bar">
+              <span class="menu-label" style="margin:0;">Tema tablero:</span>
+              <div class="themes">${themeSwatches}</div>
             </div>
           </section>
-          <section class="menu-scores">
-            ${state.playMode === 'friends' ? historyHtml(state.history) : `${scoreHeadHtml()}${scoresHtml()}`}
+
+          <section class="zap-mode-grid">
+            <article class="zap-mode-card mode-solo">
+              <div class="zap-mode-icon">⚡</div>
+              <div>
+                <span class="zap-mode-tag">Individual · Desafío diario</span>
+                <h3>MODO SOLO</h3>
+              </div>
+              <p class="zap-mode-desc">Juega a contrarreloj, encadena combos, supera tus récords y practica vocabulario bilingüe a tu ritmo.</p>
+              <ul class="zap-mode-features">
+                <li>Español → Inglés o Inglés → Español en 3 niveles</li>
+                <li>Desafío del día compartido y racha de días</li>
+                <li>Modo traducción con pistas en tiempo real</li>
+                <li>Guarda tus récords y consulta tus estadísticas</li>
+              </ul>
+              <button class="zap-btn zap-btn-primary zap-btn-lg" id="go-solo" type="button">▶ Jugar MODO SOLO</button>
+            </article>
+
+            <article class="zap-mode-card mode-mp">
+              <div class="zap-mode-icon">🏆</div>
+              <div>
+                <span class="zap-mode-tag">En tiempo real · Enlace o código</span>
+                <h3>MODO MULTIJUGADOR</h3>
+              </div>
+              <p class="zap-mode-desc">Compite contra tus amigos en rondas simultáneas: las palabras repetidas se tachan y gana el podio quien sea más ágil.</p>
+              <ul class="zap-mode-features">
+                <li>Crea una sala (2 a 10 jugadores) en segundos</li>
+                <li>Invita con enlace directo, WhatsApp o código de sala</li>
+                <li>Rondas sincronizadas, revisión de tableros y podio</li>
+                <li>Historial de competencias y estadísticas</li>
+              </ul>
+              <button class="zap-btn zap-btn-secondary zap-btn-lg" id="go-friends" type="button">
+                👥 Ir a MULTIJUGADOR${state.invites.length ? ` (${state.invites.length} invit.)` : ''}
+              </button>
+            </article>
           </section>
-        </div>
-        </div>
+        </main>
       </div>
     </div>
   `;
@@ -1651,6 +1782,41 @@ function bind() {
   app.querySelectorAll('[data-play]').forEach((button) => {
     button.onclick = () => showPlayMode(button.dataset.play);
   });
+  const goSolo = app.querySelector('#go-solo');
+  if (goSolo) {
+    goSolo.onclick = () => {
+      state.playMode = 'solo';
+      state.menuView = 'solo';
+      state.error = '';
+      render();
+    };
+  }
+  const goFriends = app.querySelector('#go-friends');
+  if (goFriends) {
+    goFriends.onclick = async () => {
+      state.playMode = 'friends';
+      state.menuView = 'friends';
+      state.error = !state.user ? 'Entra con Google para jugar con amigos' : '';
+      await loadCompeteLists();
+      render();
+    };
+  }
+  const openStats = app.querySelector('#open-stats');
+  if (openStats) {
+    openStats.onclick = async () => {
+      state.menuView = 'stats';
+      await loadCompeteLists();
+      render();
+    };
+  }
+  const backHome = app.querySelector('#back-home');
+  if (backHome) {
+    backHome.onclick = () => {
+      state.menuView = 'home';
+      state.error = '';
+      render();
+    };
+  }
   const seats = app.querySelector('#seats');
   if (seats) seats.onchange = () => { state.competeSeats = Number(seats.value); };
   const rounds = app.querySelector('#rounds');

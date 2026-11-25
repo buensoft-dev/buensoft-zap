@@ -2138,3 +2138,315 @@ body:has(.app.is-board) {
     margin: 0 auto;
   }
 }
+
+/* ============================================================================
+   BUENSOFT SUITE UNIFIED MENU (Estilo Buensoft Trivia: SOLO vs MULTIJUGADOR)
+   ============================================================================ */
+.zap-studio-overlay {
+  padding: 0 !important;
+  align-items: stretch !important;
+  justify-content: flex-start !important;
+  background:
+    radial-gradient(circle at 15% 10%, rgba(192, 38, 211, 0.24), transparent 40%),
+    radial-gradient(circle at 85% 15%, rgba(0, 210, 255, 0.2), transparent 42%),
+    radial-gradient(circle at 50% 95%, rgba(251, 191, 36, 0.12), transparent 45%),
+    linear-gradient(180deg, #060b1f 0%, #03050e 100%) !important;
+  overflow-y: auto;
+}
+
+.zap-shell {
+  width: 100%;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  color: #f1f5f9;
+}
+
+.zap-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.9rem 1.5rem;
+  background: rgba(8, 12, 28, 0.85);
+  backdrop-filter: blur(12px);
+  border-bottom: 1px solid rgba(148, 163, 184, 0.18);
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  flex-wrap: wrap;
+}
+
+.zap-topbar-left,
+.zap-topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  flex-wrap: wrap;
+}
+
+.zap-brand {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+}
+
+.zap-brand-icon {
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+}
+
+.zap-brand strong {
+  display: block;
+  font-size: 1.05rem;
+  color: #fff;
+}
+
+.zap-tag {
+  display: inline-block;
+  font-size: 0.72rem;
+  padding: 0.1rem 0.5rem;
+  border-radius: 999px;
+  background: rgba(192, 38, 211, 0.24);
+  color: #f5d0fe;
+}
+
+.zap-user-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  background: rgba(255, 255, 255, 0.08);
+  padding: 0.3rem 0.75rem 0.3rem 0.35rem;
+  border-radius: 999px;
+  font-size: 0.88rem;
+}
+
+.zap-avatar {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #c026d3, #0ea5e9);
+  color: #fff;
+  font-weight: 800;
+  font-size: 0.72rem;
+  display: inline-grid;
+  place-items: center;
+}
+
+.zap-container {
+  width: 100%;
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: 1.75rem 1.25rem 3rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.zap-container.narrow {
+  max-width: 780px;
+}
+
+.zap-hero {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.zap-hero h2 {
+  margin: 0.2rem 0 0.4rem;
+  font-size: 1.85rem;
+  color: #fff;
+}
+
+.zap-eyebrow {
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 0.75rem;
+  color: #e879f9;
+  font-weight: 800;
+}
+
+.zap-theme-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+
+.zap-mode-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 1.4rem;
+}
+
+.zap-mode-card {
+  background: rgba(14, 21, 48, 0.92);
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: 22px;
+  padding: 1.8rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  box-shadow: 0 18px 42px rgba(0, 0, 0, 0.42);
+}
+
+.zap-mode-card.mode-solo {
+  border-top: 4px solid #c026d3;
+}
+
+.zap-mode-card.mode-mp {
+  border-top: 4px solid #0ea5e9;
+}
+
+.zap-mode-icon {
+  width: 56px;
+  height: 56px;
+  border-radius: 16px;
+  display: grid;
+  place-items: center;
+  font-size: 1.65rem;
+  background: rgba(192, 38, 211, 0.18);
+}
+
+.zap-mode-card.mode-mp .zap-mode-icon {
+  background: rgba(14, 165, 233, 0.18);
+}
+
+.zap-mode-tag {
+  font-size: 0.76rem;
+  color: #94a3b8;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.zap-mode-card h3 {
+  margin: 0.2rem 0 0;
+  font-size: 1.45rem;
+  color: #fff;
+}
+
+.zap-mode-desc {
+  margin: 0;
+  color: #cbd5e1;
+  line-height: 1.45;
+}
+
+.zap-mode-features {
+  margin: 0;
+  padding-left: 1.15rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  color: #94a3b8;
+  flex: 1;
+}
+
+.zap-card {
+  background: rgba(14, 21, 48, 0.92);
+  border: 1px solid rgba(139, 92, 246, 0.35);
+  border-radius: 20px;
+  padding: 1.5rem;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.4);
+}
+
+.zap-card h3 {
+  margin: 0.25rem 0 0.75rem;
+  color: #fff;
+}
+
+.zap-card-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.zap-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+.zap-checks {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  margin: 1rem 0;
+}
+
+.zap-footer-actions {
+  margin-top: 1.25rem;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.zap-alert {
+  background: rgba(239, 68, 68, 0.16);
+  border: 1px solid rgba(239, 68, 68, 0.45);
+  color: #fecaca;
+  padding: 0.8rem 1rem;
+  border-radius: 12px;
+}
+
+.zap-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  padding: 0.6rem 1.05rem;
+  font-weight: 700;
+  cursor: pointer;
+  color: #fff;
+  transition: transform 0.12s ease, filter 0.15s ease;
+}
+
+.zap-btn:hover {
+  filter: brightness(1.08);
+  transform: translateY(-1px);
+}
+
+.zap-btn-lg {
+  padding: 0.85rem 1.4rem;
+  font-size: 1rem;
+  width: 100%;
+}
+
+.zap-btn-primary {
+  background: linear-gradient(135deg, #c026d3, #7c3aed);
+}
+
+.zap-btn-secondary {
+  background: linear-gradient(135deg, #0ea5e9, #2563eb);
+}
+
+.zap-btn-gold {
+  background: linear-gradient(135deg, #fbbf24, #f59e0b, #ea580c);
+  color: #090d1f;
+  font-weight: 800;
+}
+
+.zap-btn-ghost {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(148, 163, 184, 0.25);
+}
+
+.zap-btn-ghost.is-active {
+  background: rgba(192, 38, 211, 0.25);
+  border-color: #c026d3;
+}
+
+@media (max-width: 600px) {
+  .zap-topbar {
+    padding: 0.75rem 0.9rem;
+  }
+  .zap-mode-card {
+    padding: 1.3rem;
+  }
+}
